@@ -30,7 +30,7 @@ int inicializar_sockets_escucha(int * socket_escucha, int * socket_erlang)
   serl.sin_family = AF_INET;
   serl.sin_port = htons(PUERTO);
   serl.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-	
+
   if(bind(socketEfd, (struct sockaddr *)&se, sizeof se) < 0 || bind(socketERLfd, (struct sockaddr *)&serl, sizeof serl) < 0)
     //handle_error(q);
     quit("bind");
@@ -45,7 +45,7 @@ int inicializar_sockets_escucha(int * socket_escucha, int * socket_erlang)
 
 void crear_epoll()
 {
-	struct epoll_event ev, erlv, events[MAX_EVENTS];
+	struct epoll_event ev_escucha, ev_erl, events[MAX_EVENTS];
   int epollfd;
   epollfd = epoll_create();
    
@@ -58,8 +58,8 @@ void crear_epoll()
   int socket_escucha, socket_erlang;
   inicializar_sockets_escucha(&socket_escucha, &socket_erlang);
 
-  if(epoll_ctl(epollfd, EPOLL_CTL_ADD, socket_escucha, &epoll_event) < 0 ||
-     epoll_ctl(epollfd, EPOLL_CTL_ADD, socket_erlang, &epoll_event) < 0 )
+  if(epoll_ctl(epollfd, EPOLL_CTL_ADD, socket_escucha, &ev_escucha) < 0 ||
+     epoll_ctl(epollfd, EPOLL_CTL_ADD, socket_erlang, &ev_erl) < 0 )
     exit(EXIT_FAILURE);
   
 	//aceptar_eventos();    
