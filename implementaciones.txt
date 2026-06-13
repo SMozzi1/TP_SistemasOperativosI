@@ -1,0 +1,6 @@
+Sabado 13/6
+Implemente 2 funciones, una inicializa los dos puertos de escucha tanto para los otros nodos como para erlan y
+una funcion para agregar esos puertos al epoll. Me faltaria informarme a que refiere "Utilizar epoll para gestionar cientos de 
+conexiones TCP de forma no bloqueante en C"
+
+Tambien ver de hacer un handler para cualquier error en las conecciones y en la creacion de los sockets/epoll
