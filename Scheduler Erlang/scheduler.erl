@@ -180,7 +180,8 @@ parse_nodes(Data) ->
 %% @doc Parses a single node string into {IP, Port, Resources}
 %% @spec parse_node(string()) -> {string(), integer(), list()}
 parse_node(NodeStr) ->
-    [IP, PortStr, "cpu", CpuStr, "mem", MemStr, "gpu", GpuStr] = string:split(NodeStr, ":", all),
+    Clean = string:trim(NodeStr), %% cleans the "/n" at the end
+    [IP, PortStr, "cpu", CpuStr, "mem", MemStr, "gpu", GpuStr] = string:split(Clean, ":", all),
     Port = list_to_integer(PortStr),
     %% Note: while the nodes includes their resources in the following order:
     %%          cpu > mem > gpu
