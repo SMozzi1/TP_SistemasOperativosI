@@ -9,7 +9,7 @@
 
 
 %% @doc Starts the scheduler agent. Receives the port as an argument
-%% @spec start(int()) -> ok.
+%% @spec start(integer()) -> ok.
 start(Port) ->
     spawn(?MODULE, coordinator, [Port]).
 
@@ -113,47 +113,79 @@ msg_to_job(Jobs_Map, Rest, Msg) ->
     PidJob ! Msg .
 
 
-format_job_request(JobId,Recursos) -> todo.
+job_request_format(Recursos) -> todo.
 
-job_generator(CurrentPid,CoordPid) -> todo.
 
 
 %% TODO: job/3
-%%   - Recibir {register_and_request, JobId, self(), Recursos} al coordinator
+%%   - Mandar {register_and_request, JobId, self(), Recursos} al coordinator
 %%   - Hacer receive de: granted | denied | timeout | cancelled
 %%   - Si granted: timer:sleep() simulando trabajo, luego {finished, JobId} al coordinator
 %%   - Si denied: morir
 %%   - Si timeout: ? (a acordar)
 %%   - Si cancelled: morir (C se desconecto)
 
-%% TODO: job_generator/2
-%%   - Mandar {get_nodes, self()} al coordinator
-%%   - Esperar {nodes, Data} del coordinator
-%%   - Llamar parsear_nodos(Data)
-%%   - Llamar armar_recursos(Nodos) para construir lista de recursos
-%%   - spawn job con JobId N y recursos armados
-%%   - timer:sleep(5000)
-%%   - Llamar recursivamente con N+1
+job
 
-%% TODO: parsear_nodos/1
-%%   - Splitear string por ";" para separar nodos
-%%   - Para cada nodo splitear por ":" para obtener IP, Puerto, recursos
-%%   - Devolver lista de {IP, Puerto, #{cpu => X, mem => Y, gpu => Z}}
-%%   - Acordar formato exacto con companiero de C
 
-%% TODO: armar_recursos/1
-%%   - Recibir lista de nodos parseados
-%%   - Para cada recurso elegir un nodo al azar de la lista
-%%   - Pedir cantidad random entre 1 y el maximo disponible del nodo
-%%   - Devolver lista ORDENADA: cpu < mem < gpu (evito deadlock)
+
+
+job_generator(JobId, CoordPid) ->
+    CoordPid ! {get_nodes, self()},
+    receive
+        {nodes, Data} -> 
+            Parsed_Data = parse_nodes(Data),
+            Resources = make_resources(Parsed_Data),
+            spawn(?MODULE, job, [JobId, Resources]),
+
+            timer:sleep(5000),
+            job_generator(JobId + 1 , CoordPid)
+    end.
+
+
+
+
+%% @doc Parses the full nodes string from C into a list of {IP, Port, Resources}
+%% @spec parse_nodes(string()) -> list()
+parse_nodes(Data) ->
+    NodeStrings = string:split(Data, ";", all),
+    lists:map(fun parse_node/1, NodeStrings).
+
+
+%% @doc Parses a single node string into {IP, Port, Resources}
+%% @spec parse_node(string()) -> {string(), integer(), list()}
+parse_node(NodeStr) ->
+    [IP, PortStr, "cpu", CpuStr, "mem", MemStr, "gpu", GpuStr] = string:split(NodeStr, ":", all),
+    Port = list_to_integer(PortStr),
+    %% Note: while the nodes includes their resources in the following order:
+    %%          cpu > mem > gpu
+    %% We decide to make each node as cpu > gpu > mem to follow a lexigraphic order
+    Resources = [{cpu, list_to_integer(CpuStr)}, 
+                {gpu, list_to_integer(GpuStr)}, 
+                {mem, list_to_integer(MemStr)}],
+    {IP, Port, Resources}.
+
+
+
+make_resources(Data) ->
+    CpuSol = pick_resource(cpu, Data),
+    GpuSol = pick_resource(gpu, Data),
+    MemSol = pick_resource(mem, Data),
+    [CpuSol,GpuSol,MemSol].
+
+%% @doc Picks a random node and a random amount of a given resource type
+%% @spec pick_resource(atom(), list()) -> {string(), integer(), atom(), integer()}
+pick_resource(Type, Nodes) ->
+    {IP, Port, Resources} = lists:nth(rand:uniform(length(Nodes)), Nodes),
+    {Type, TypeStr} = lists:keyfind(Type, 1, Resources),
+    {IP, Port, Type, rand:uniform(TypeStr)}.
+    
 
 %%NOTA DE DEADLOCK
 %% Se deberia implementar otra estrategia en caso que otro equipo
 %% no respete este orden (quiza con wait-die)
 
-%% TODO:format_job_request/2
-%%   - Armar string "JOB_REQUEST <job_id> @ip:port:res:amount ..."
-%%   - Acordar formato exacto con companiero de C
+
 
 %% TODO: logging
 %%   - Registrar en archivo .log cada granted, denied, timeout
