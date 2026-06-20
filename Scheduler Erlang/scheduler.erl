@@ -6,6 +6,8 @@
 
 -export([msg_to_job/3]).
 
+-export([job/3]).
+
 
 
 %% @doc Starts the scheduler agent. Receives the port as an argument
