@@ -1,12 +1,18 @@
 -module(scheduler).
-
+-import(scheduler_utils, [msg_to_job/3, write_on_log/2, parse_nodes/1, parse_node/1, make_resources_for_job/1, pick_resource/2, job_request_format/2]).
 -export([start/1,coordinator/1]).
+
 
 -export([job_generator/2, coordinator_loop/3]).
 
--export([msg_to_job/3]).
 
 -export([job/3]).
+
+%% TIme it takes the generator to create the next job.
+-define(GENERATOR_LOOP_TIME, 5000).
+
+%% Time at max of a job for relaunching itself
+-define(JOB_TIMEOUT_MAX_RELAUNCH, 20).
 
 
 
@@ -20,15 +26,16 @@ start(Port) ->
 %% @spec coordinator(integer()) -> no_return()
 coordinator(Port) ->
     {ok, Socket} = gen_tcp:connect({127,0,0,1}, Port, [
-        %%-active -> llegan los mensajes automaticamente al buzon
-        %%           util para recibir msgs de tcp como {tcp, Socket, Data}
+        %%-active -> no need to use tcp recv for the C messages. they reach as normal mgs.
         {active, true},
-        %% -packet , line -> el msg es hasta el \n
+        %% -packet , line -> the msg ends with "\n" included
         {packet, line}
     ]),
 
     %% Starts the job_generator with the first JobId and the coordinator Pid
     spawn(?MODULE, job_generator, [1001, self()]),
+
+    write_on_log(started, Port),   %% Marks the start of a run.
 
     %% From here on, goes on a loop of receiving/sending messages from different parts
     coordinator_loop(Socket, #{}, undefined).
@@ -43,8 +50,8 @@ coordinator_loop(Socket,Jobs_Map,GenPid) ->
         %% JOB INIT/END MESSAGES
 
         %% a job has to be registered in the map and sent it to the C agent
-        {register_and_request, JobId, PidJob, Resources} ->
-            gen_tcp:send(Socket, Resources),
+        {register_and_request, JobId, PidJob, Message} ->
+            gen_tcp:send(Socket, Message),
             NewJobsMap = maps:put(JobId, PidJob, Jobs_Map),
             coordinator_loop(Socket, NewJobsMap, GenPid);
 
@@ -62,14 +69,17 @@ coordinator_loop(Socket,Jobs_Map,GenPid) ->
         %% just changing the atom sent to msg_to_job()
 
         {tcp, Socket, "JOB_GRANTED " ++ Rest} ->
+            write_on_log(granted,Rest),
             msg_to_job(Jobs_Map, Rest, granted),
             coordinator_loop(Socket, Jobs_Map, GenPid);
 
         {tcp, Socket, "JOB_DENIED " ++ Rest} ->
+            write_on_log(denied,Rest),
             msg_to_job(Jobs_Map, Rest, denied),
             coordinator_loop(Socket, Jobs_Map, GenPid);
 
         {tcp, Socket, "JOB_TIMEOUT " ++ Rest} ->
+            write_on_log(timeout,Rest),
             msg_to_job(Jobs_Map, Rest, timeout),
             coordinator_loop(Socket, Jobs_Map, GenPid);
 
@@ -98,34 +108,15 @@ coordinator_loop(Socket,Jobs_Map,GenPid) ->
 
         %% Note that it doesnt call
         {tcp_closed, Socket} ->
+            write_on_log(connection_closed, "all_jobs_cancelled"),
             lists:foreach(fun(PidJob) -> PidJob ! cancelled end, maps:values(Jobs_Map));
 
         {tcp_error, Socket, _Reason} ->
+            write_on_log(connection_closed, "all_jobs_cancelled"),
             lists:foreach(fun(PidJob) -> PidJob ! cancelled end, maps:values(Jobs_Map))
         
     end.
 
-%% @doc Function to modularize the sending of state messages to the jobs
-%% @spec maps_to_job(map(), list(), atomic()) 
-msg_to_job(Jobs_Map, Rest, Msg) ->
-    JobId = list_to_integer(string:trim(Rest)),
-    PidJob = maps:get(JobId, Jobs_Map),
-    PidJob ! Msg .
-
-
-%% @doc Builds the "@IP:type:amount" string for one resource
-%% @spec resource_to_string({string(), integer(), atom(), integer()}) -> string()
-resource_to_string({IP, _Port, Tipo, Cantidad}) ->
-    "@" ++ IP ++ ":" ++ atom_to_list(Tipo) ++ ":" ++ integer_to_list(Cantidad).
-
-%% @doc Builds the full JOB_REQUEST string for the C agent
-%% @spec format_job_request(integer(), list()) -> string()
-job_request_format(JobId, Recursos) ->
-    [Cpu, Mem, Gpu] = Recursos,
-    CpuString = resource_to_string(Cpu),
-    MemString = resource_to_string(Mem),
-    GpuString = resource_to_string(Gpu),
-    "JOB_REQUEST " ++ integer_to_list(JobId) ++ " " ++ CpuString ++ " " ++ MemString ++ " " ++ GpuString ++ "\n".
 
 
 
@@ -146,66 +137,37 @@ job(CoordPid , JobId , Resources) ->
             ok;
         timeout ->
             %% Timeout -> relaunches job after some time
-            Time = rand:uniform(20),
+            Time = rand:uniform(?JOB_TIMEOUT_MAX_RELAUNCH),
             timer:sleep(Time),
-            job(CoordPid, JobId, Resources)
+            job(CoordPid, JobId, Resources);
+        cancelled ->
+            %% C agent died or had an error -> dies
+            ok
     end.
 
 
 
-
-
+%% @doc Ask for nodes information to C, and creates a job with a resources solitude, after that, it loops into itself
+%% @spec job_generator(integer(),integer()) -> no_return().
 job_generator(JobId, CoordPid) ->
     CoordPid ! {get_nodes, self()},
     receive
         {nodes, Data} -> 
+            %% First, it parsed the Data from the nodes received
             Parsed_Data = parse_nodes(Data),
-            Resources = make_resources(Parsed_Data),
+
+            Resources = make_resources_for_job(Parsed_Data),
             spawn(?MODULE, job, [CoordPid, JobId, Resources]),
 
-            timer:sleep(5000),
+            timer:sleep(?GENERATOR_LOOP_TIME),
+
+            %% After this, it recalls itself, with a increase in the JobId
             job_generator(JobId + 1 , CoordPid)
     end.
 
 
 
 
-%% @doc Parses the full nodes string from C into a list of {IP, Port, Resources}
-%% @spec parse_nodes(string()) -> list()
-parse_nodes(Data) ->
-    NodeStrings = string:split(Data, ";", all),
-    lists:map(fun parse_node/1, NodeStrings).
-
-
-%% @doc Parses a single node string into {IP, Port, Resources}
-%% @spec parse_node(string()) -> {string(), integer(), list()}
-parse_node(NodeStr) ->
-    Clean = string:trim(NodeStr), %% cleans the "/n" at the end
-    [IP, PortStr, "cpu", CpuStr, "mem", MemStr, "gpu", GpuStr] = string:split(Clean, ":", all),
-    Port = list_to_integer(PortStr),
-    %% Note: while the nodes includes their resources in the following order:
-    %%          cpu > mem > gpu
-    %% We decide to make each node as cpu > gpu > mem to follow a lexigraphic order
-    Resources = [{cpu, list_to_integer(CpuStr)}, 
-                {gpu, list_to_integer(GpuStr)}, 
-                {mem, list_to_integer(MemStr)}],
-    {IP, Port, Resources}.
-
-
-
-make_resources(Data) ->
-    CpuSol = pick_resource(cpu, Data),
-    GpuSol = pick_resource(gpu, Data),
-    MemSol = pick_resource(mem, Data),
-    [CpuSol,GpuSol,MemSol].
-
-%% @doc Picks a random node and a random amount of a given resource type
-%% @spec pick_resource(atom(), list()) -> {string(), integer(), atom(), integer()}
-pick_resource(Type, Nodes) ->
-    {IP, Port, Resources} = lists:nth(rand:uniform(length(Nodes)), Nodes),
-    {Type, TypeStr} = lists:keyfind(Type, 1, Resources),
-    {IP, Port, Type, rand:uniform(TypeStr)}.
-    
 
 
 
