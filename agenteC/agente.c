@@ -35,9 +35,130 @@ void handler(const char *msg) {
 
 
 
+
+
+
+
+
+void C_to_erlang(int erlangfd, char* instruction, char* job_id)
+{
+    char msg[LENG];
+    int n;
+
+    if (!strcmp(instruction, "granted"))
+    {
+        n = snprintf(msg, sizeof(msg), "JOB_GRANTED %s\n", job_id);
+    }
+    else if (!strcmp(instruction, "rejected"))
+    {
+        n = snprintf(msg, sizeof(msg), "JOB_DENIED %s\n", job_id);
+    }
+    else if (!strcmp(instruction, "waiting"))
+    {
+        n = snprintf(msg, sizeof(msg), "WAITING %s\n", job_id);
+    }
+    else
+    {
+        n = snprintf(msg, sizeof(msg), "JOB_TIMEOUT %s\n", job_id);
+    }
+
+
+    if (n < 0 || n >= (int)sizeof(msg)) {
+        fprintf(stderr, "C_to_erlang: mensaje truncado o error de formato\n");
+        return;
+    }
+
+    ssize_t sent = send(erlangfd, msg, n, MSG_DONTWAIT);
+    if (sent < 0) {
+        perror("send a erlang");
+        //VEr como atrapar el error
+    }
+}
+
+
+
+
+
+
+
+
+//VER TIME OUT
+
+void erlang_to_C(int erlangfd, char* instruction)
+{
+  char* token[10];
+  char* t = strtok(instruction, " ");
+  int i = 0;
+    while (t != NULL && i < 10) {
+        token[i] = t;
+        i++;
+        t = strtok(NULL, " \n");
+    }
+  //0, if the s1 and s2 are equal;
+  if(!strcmp("JOB_REQUEST", token[0]))
+  {
+
+    //Solicitar recursos
+    //C_to_c deberia recibir granted
+    int succes = 0;
+    //Le mando un valor si consiguio o no
+
+    if (succes) {
+            C_to_erlang(erlangfd, "granted", token[1]);
+        } else {
+            C_to_erlang(erlangfd, "rejected", token[1]);
+        }
+
+
+  }
+  else if(!strcmp("JOB_RELEASE", token[0]))
+  {
+    
+    //Liberar datos , eliminar proceso de la tabla hash
+    //Erlan ya mato al proceso
+
+  }
+  
+  else
+  {
+    C_to_erlang(erlangfd, "waiting", token[1]);
+  }
+
+}
+
+
+
+
+
+
+
+
+void C_to_C()
+{
+ //Si consigo granted, denied reserve o relese 
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 void inicializar_sockets_escucha(int *socket_escucha, int *socket_erlang, int *socket_UDP )
 {
   int socketEfd, socketERLfd, socketUDP;
+  
   struct sockaddr_in se, serl, sudp;
 
   //We set the nonblocking mode by adding SOCK_NONBLOCK to the second argument to socket()
@@ -57,12 +178,12 @@ void inicializar_sockets_escucha(int *socket_escucha, int *socket_erlang, int *s
   int yes = 1;
   if (setsockopt(socketEfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes) < 0 ||
    	  setsockopt(socketERLfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes) < 0|| 
-      setsockopt(socketUDP, SOL_SOCKET, SO_BROADCAST, &yes, sizeof yes) < 0)
+      setsockopt(socketUDP, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes) < 0)
 			handler("SETSOCKOPT");
 
   sudp.sin_family = AF_INET;
   //function htonl converts the unsigned integer hostlong from host byte order to network byte order.
-  sudp.sin_port = htons(PORT);
+  sudp.sin_port = htonl(PORT);
   //INADDR_ANY listen from every ip
   sudp.sin_addr.s_addr = htonl(INADDR_ANY);
 
@@ -77,7 +198,7 @@ void inicializar_sockets_escucha(int *socket_escucha, int *socket_erlang, int *s
 
   if(bind(socketEfd, (struct sockaddr *)&se, sizeof se) < 0 || 
      bind(socketERLfd, (struct sockaddr *)&serl, sizeof serl) < 0 ||
-     bind(socketUDP, (struct sockaddr *)&sudp, sizeof sudp) < 0)
+     bind(socketUDP, (struct sockaddr *)&sudp, sizeof sudp))
     handler("BIND");
     
 
@@ -184,6 +305,7 @@ void aceptar_eventos(int epollfd, struct epoll_event events[])
         printf("[UDP] ¡Anuncio detectado desde la IP física: %s!\n", ip_node);
         printf("[UDP] Texto crudo recibido: %s", buff);
         
+        
       }
       //If erlang sends us a message
       else if(actualfd == erlangfd)
@@ -200,8 +322,7 @@ void aceptar_eventos(int epollfd, struct epoll_event events[])
 
           //Desglosar mensajes()
           //ejecutar mensajes (trabajo de estructural)
-          
-          //
+          erlang_to_C(erlangfd, buff);
         }
       }
       
@@ -224,112 +345,8 @@ void aceptar_eventos(int epollfd, struct epoll_event events[])
       }
     }
   }
+}
   
-}
-
-
-
-
-
-
-
-
-
-
-
-
-void C_to_C()
-{
- //Si consigo granted, denied reserve o relese 
-}
-
-
-
-void C_to_erlang(int erlangfd, char* instruction, char* job_id)
-{
-  if(!strcmp("granted", instruction))
-  {
-    char* msg = strcat("JOB_GRANTED ", job_id); 
-    int n = strlen(msg);
-    send(erlangfd, msg, n, MSG_DONTWAIT);
-  }
-  else if(!strcmp("rejected", instruction))
-  {
-    char* msg = strcat("JOB_DENIED ", job_id); 
-    int n = strlen(msg);
-    send(erlangfd, msg, n, MSG_DONTWAIT);
-  }
-  else if(!strcmp("waiting", instruction)){
-    char* msg = strcat("WAITING ", job_id); 
-    int n = strlen(msg);
-    send(erlangfd, msg, n, MSG_DONTWAIT);
-  }
-  else
-  {
-    char* msg = strcat("JOB_TIMEOUT ", job_id); 
-    int n = strlen(msg);
-    send(erlangfd, msg, n, MSG_DONTWAIT);
-  }
-}
-
-
-
-
-
-
-
-
-//VER TIME OUT
-
-void erlang_to_C(int erlangfd, char* instruction)
-{
-  char* token[10];
-  char* t = strtok(instruction, " ");
-  int i = 0;
-    while (t != NULL && i < 10) {
-        token[i] = t;
-        i++;
-        t = strtok(NULL, " \n");
-    }
-  //0, if the s1 and s2 are equal;
-  if(!strcmp("JOB_REQUEST", token[0]))
-  {
-
-    //Solicitar recursos
-    //C_to_c deberia recibir granted
-    int succes = 0;
-    //Le mando un valor si consiguio o no
-
-    if (succes) {
-            C_to_erlang(erlangfd, "granted", token[1]);
-        } else {
-            C_to_erlang(erlangfd, "rejected", token[1]);
-        }
-
-
-  }
-  else if(!strcmp("JOB_RELEASE", token[0]))
-  {
-    
-    //Liberar datos , eliminar proceso de la tabla hash
-    //Erlan ya mato al proceso
-
-  }
-  
-  else
-  {
-    C_to_erlang(erlangfd, "waiting", token[1]);
-  }
-
-}
-
-
-
-
-
-
-
-
 
 
 
