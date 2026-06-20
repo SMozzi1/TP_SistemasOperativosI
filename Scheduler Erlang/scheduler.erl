@@ -41,10 +41,8 @@ coordinator_loop(Socket,Jobs_Map,GenPid) ->
         %% JOB INIT/END MESSAGES
 
         %% a job has to be registered in the map and sent it to the C agent
-        {register_and_request, JobId, PidJob, Recursos} ->
-
-            Msg =format_job_request(JobId, Recursos),
-            gen_tcp:send(Socket, Msg),
+        {register_and_request, JobId, PidJob, Resources} ->
+            gen_tcp:send(Socket, Resources),
             NewJobsMap = maps:put(JobId, PidJob, Jobs_Map),
             coordinator_loop(Socket, NewJobsMap, GenPid);
 
@@ -113,19 +111,44 @@ msg_to_job(Jobs_Map, Rest, Msg) ->
     PidJob ! Msg .
 
 
-job_request_format(Recursos) -> todo.
+%% @doc Builds the "@IP:type:amount" string for one resource
+%% @spec resource_to_string({string(), integer(), atom(), integer()}) -> string()
+resource_to_string({IP, _Port, Tipo, Cantidad}) ->
+    "@" ++ IP ++ ":" ++ atom_to_list(Tipo) ++ ":" ++ integer_to_list(Cantidad).
+
+%% @doc Builds the full JOB_REQUEST string for the C agent
+%% @spec format_job_request(integer(), list()) -> string()
+job_request_format(JobId, Recursos) ->
+    [Cpu, Mem, Gpu] = Recursos,
+    CpuString = resource_to_string(Cpu),
+    MemString = resource_to_string(Mem),
+    GpuString = resource_to_string(Gpu),
+    "JOB_REQUEST " ++ integer_to_list(JobId) ++ " " ++ CpuString ++ " " ++ MemString ++ " " ++ GpuString ++ "\n".
 
 
 
-%% TODO: job/3
-%%   - Mandar {register_and_request, JobId, self(), Recursos} al coordinator
-%%   - Hacer receive de: granted | denied | timeout | cancelled
-%%   - Si granted: timer:sleep() simulando trabajo, luego {finished, JobId} al coordinator
-%%   - Si denied: morir
-%%   - Si timeout: ? (a acordar)
-%%   - Si cancelled: morir (C se desconecto)
 
-job
+%% @doc Ask for resources and, if granted, simulates work .
+%% @spec job(integer(), integer(), list()) -> ok.
+job(CoordPid , JobId , Resources) ->
+    Message = job_request_format(JobId,Resources),
+    CoordPid ! {register_and_request , JobId, self(), Message},
+    receive
+        granted ->
+            %% Simulates work
+            Time = rand:uniform(20),
+            timer:sleep(Time),
+            CoordPid ! {finished, JobId};
+        denied ->
+            %% Job unnacepted -> dies
+            ok;
+        timeout ->
+            %% Timeout -> relaunches job after some time
+            Time = rand:uniform(20),
+            timer:sleep(Time),
+            job(CoordPid, JobId, Resources)
+    end.
+
 
 
 
@@ -136,7 +159,7 @@ job_generator(JobId, CoordPid) ->
         {nodes, Data} -> 
             Parsed_Data = parse_nodes(Data),
             Resources = make_resources(Parsed_Data),
-            spawn(?MODULE, job, [JobId, Resources]),
+            spawn(?MODULE, job, [CoordPid, JobId, Resources]),
 
             timer:sleep(5000),
             job_generator(JobId + 1 , CoordPid)
@@ -181,6 +204,9 @@ pick_resource(Type, Nodes) ->
     {IP, Port, Type, rand:uniform(TypeStr)}.
     
 
+
+
+
 %%NOTA DE DEADLOCK
 %% Se deberia implementar otra estrategia en caso que otro equipo
 %% no respete este orden (quiza con wait-die)
@@ -203,6 +229,6 @@ pick_resource(Type, Nodes) ->
 %%   - Decidir estrategia de armar_recursos:
 %%       * Pide a un solo nodo o a varios?
 %%       * Cuantos recursos pide por job?
-%%   - Validar ordenamiento global cpu < mem < gpu
+%%   - Validar ordenamiento global cpu < gpu < mem
 %%     con el escenario de deadlock del TP (seccion 6)
 %%   - Probar con nc -l antes de tener el agente C listo
