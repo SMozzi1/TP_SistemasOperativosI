@@ -180,25 +180,3 @@ job_generator(JobId, CoordPid) ->
 %% Se deberia implementar otra estrategia en caso que otro equipo
 %% no respete este orden (quiza con wait-die)
 
-
-
-%% TODO: logging
-%%   - Registrar en archivo .log cada granted, denied, timeout
-%%   - Formato: "[timestamp] JOB <id> GRANTED/DENIED/TIMEOUT"
-%%   - Usar file:write_file o io:format
-
-%% DISEÑO PENDIENTE:
-%%   - Acordar con mozzi:
-%%       * Puerto de conexion local Erlang <-> C
-%%       * Formato exacto de JOB_REQUEST
-%%       * Formato exacto de NODES (separadores, orden de campos)
-%%   - Decidir comportamiento ante JOB_TIMEOUT:
-%%       * El job reintenta o muere?
-%%       * El coordinator limpia el map ante timeout?
-%%   - Decidir estrategia de armar_recursos:
-%%       * Pide a un solo nodo o a varios?
-%%       * Cuantos recursos pide por job?
-%%   - Validar ordenamiento global cpu < gpu < mem
-%%     con el escenario de deadlock del TP (seccion 6)
-%%   - Probar con nc -l antes de tener el agente C listo
-
