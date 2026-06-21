@@ -1,0 +1,53 @@
+#ifndef COMUNICACIONES_H
+#define COMUNICACIONES_H
+
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/epoll.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <unistd.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include "comunicaciones.h"
+#include "job_table.h"
+
+
+
+
+
+// Max capacity for the stream reconstruction buffer
+#define BUFFER_MAX 2048
+
+/*
+ *  Reads from a non-blocking socket piece by piece until a newline character is found.
+ *  fd The socket file descriptor to read from (e.g., erlangfd).
+ *  output_line Buffer where the complete line will be copied once fully assembled.
+ *  1 if the line is complete, 0 if more data is needed, -1 on error/disconnection.
+ */
+int read_until_newline(int fd, char* output_line);
+
+/**
+ *  Parses instructions coming from Erlang and triggers the appropriate action.
+ *  erlangfd The socket connected to the Erlang node.
+ *  instruction The raw null-terminated string received from the socket.
+ */
+void erlang_to_C(int erlangfd, char* instruction);
+
+/**
+  Sends a formatted response back to Erlang safely using MSG_NOSIGNAL.
+  The socket connected to the Erlang node.
+  estado The status string (e.g., "granted", "rejected", "waiting").
+  job_id The identifier of the job being processed.
+ */
+void C_to_erlang(int erlangfd, char* estado, char* job_id);
+
+/*
+ communication between C agents (peer-to-peer logic).
+ */
+void C_to_C(void);
+
+#endif /* NETWORK_UTILS_H */
