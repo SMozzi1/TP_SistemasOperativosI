@@ -1,6 +1,7 @@
 -module(scheduler).
 -import(scheduler_utils, [msg_to_job/3, write_on_log/2, parse_nodes/1, parse_node/1, make_resources_for_job/1, pick_resource/2, job_request_format/2]).
--export([start/1,coordinator/1]).
+
+-export([start/0,coordinator/0]).
 
 
 -export([job_generator/2, coordinator_loop/3]).
@@ -14,18 +15,20 @@
 %% Time at max of a job for relaunching itself
 -define(JOB_TIMEOUT_MAX_RELAUNCH, 20).
 
+%% Used port.
+-define(PORT, 4200).
 
 
-%% @doc Starts the scheduler agent. Receives the port as an argument
-%% @spec start(integer()) -> ok.
-start(Port) ->
-    spawn(?MODULE, coordinator, [Port]).
+%% @doc Starts the scheduler agent.
+%% @spec start() -> ok.
+start() ->
+    spawn(?MODULE, coordinator, []).
 
 
 %% @doc Connects to the C local host, creates the job generator and starts coordinator_loop
-%% @spec coordinator(integer()) -> no_return()
-coordinator(Port) ->
-    {ok, Socket} = gen_tcp:connect({127,0,0,1}, Port, [
+%% @spec coordinator() -> no_return()
+coordinator() ->
+    {ok, Socket} = gen_tcp:connect({127,0,0,1}, ?PORT, [
         %%-active -> no need to use tcp recv for the C messages. they reach as normal mgs.
         {active, true},
         %% -packet , line -> the msg ends with "\n" included
@@ -35,7 +38,7 @@ coordinator(Port) ->
     %% Starts the job_generator with the first JobId and the coordinator Pid
     spawn(?MODULE, job_generator, [1001, self()]),
 
-    write_on_log(started, Port),   %% Marks the start of a run.
+    write_on_log(started, ?PORT),   %% Marks the start of a run.
 
     %% From here on, goes on a loop of receiving/sending messages from different parts
     coordinator_loop(Socket, #{}, undefined).
@@ -69,17 +72,17 @@ coordinator_loop(Socket,Jobs_Map,GenPid) ->
         %% just changing the atom sent to msg_to_job()
 
         {tcp, Socket, "JOB_GRANTED " ++ Rest} ->
-            write_on_log(granted,Rest),
+            write_on_log(granted,list_to_integer(string:trim(Rest))),
             msg_to_job(Jobs_Map, Rest, granted),
             coordinator_loop(Socket, Jobs_Map, GenPid);
 
         {tcp, Socket, "JOB_DENIED " ++ Rest} ->
-            write_on_log(denied,Rest),
+            write_on_log(denied,list_to_integer(string:trim(Rest))),
             msg_to_job(Jobs_Map, Rest, denied),
             coordinator_loop(Socket, Jobs_Map, GenPid);
 
         {tcp, Socket, "JOB_TIMEOUT " ++ Rest} ->
-            write_on_log(timeout,Rest),
+            write_on_log(timeout,list_to_integer(string:trim(Rest))),
             msg_to_job(Jobs_Map, Rest, timeout),
             coordinator_loop(Socket, Jobs_Map, GenPid);
 
