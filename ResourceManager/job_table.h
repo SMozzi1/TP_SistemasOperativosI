@@ -5,7 +5,6 @@
 #define TABLE_SIZE 256
 
 typedef struct granted_t {
-    int 
     char type[8];//gpu, mem, cpu
     int amount;   //reserved amount
     int providerfd; //fd que dio el recurso, (para hacer realese)
@@ -28,6 +27,10 @@ typedef struct active_jobs {
    pthread_mutex_t mutexTable; 
 } active_jobs;
 
+typedef struct active_nodes {
+    int* node_fd[TABLE_SIZE];
+}active_nodes;
+
 /*-----Granted Resource interface-----------*/
 granted_t* MakeGranted(char* type, int amount);
 void DestroyGranted(granted_t* granted_res);
@@ -48,5 +51,31 @@ void JobsTableInsert(active_jobs* table, job_entry* job);
 job_entry* FindJob(active_jobs* table, int job_id);
 void RemoveJob(active_jobs* table, int job_id);
 void PrintTable(active_jobs* table);
+
+
+/* ---------------- FIFO Queues for Pending Resource Requests ----------*/
+
+typedef struct pending_node_s {
+    job_entry* job;
+    int amount_req;
+    struct pending_node_s* next;
+} pending_node_t;
+
+typedef struct fifo_queue_s {
+    pending_node_t* head;
+    pending_node_t* tail;
+    pthread_mutex_t queue_mutex;
+} fifo_queue_t;
+
+/* ---------- Function prototypes for queue and resource management -------- */
+
+void init_queue(fifo_queue_t* queue);
+void enqueue_job(fifo_queue_t* queue, job_entry* job, int amount);
+void process_queue(fifo_queue_t* queue, int* available_resource, const char* resource_name);
+
+
+/*---------aux_functions--------*/
+void remove_specific_resource(job_entry* job, const char* resource_name);
+void update_local_resources(const char* resource_name, int amount);
 
 #endif /*_JOB_TABLE_H_*/

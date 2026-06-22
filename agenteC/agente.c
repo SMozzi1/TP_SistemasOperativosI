@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+
 /*
  * agente.c
  *
@@ -20,11 +21,20 @@
 
 #include "comunicaciones.h"
 #include "agente.h"
-#include "job_table.h"
-
-
-
 #include <signal.h>
+
+
+/* Inventario de recursos locales disponibles */
+int cpu_available = 4;
+int mem_available = 8192;
+int gpu_available = 1;
+
+/* Mutex para proteger el inventario local de condiciones de carrera */
+pthread_mutex_t mutex_resources = PTHREAD_MUTEX_INITIALIZER;
+
+active_jobs table_nodes;
+active_jobs table_clients;
+
 
 
 #define MAX_EVENTS 64        // Maximum number of events epoll will process in a single wake-up
@@ -143,7 +153,7 @@ static int make_timer(int initial_sec, int interval_sec) {
 }
 
 /*
- * Walks tabla_propia and tabla_clientes.
+ * Walks table_nodes and table_clients.
  * Any job that has been pending for more than JOB_TIMEOUT_SEC seconds
  * is cancelled: JOB_TIMEOUT is sent to Erlang and the entry is removed.
  *
@@ -152,14 +162,14 @@ static int make_timer(int initial_sec, int interval_sec) {
 static void check_job_timeouts(void) {
     time_t now = time(NULL);
 
-    /* ── tabla_propia: our jobs waiting for a reply from remote nodes ── */
-    pthread_mutex_lock(&tabla_propia.mutexTable);
-    for (int i = 0; i < HASH_SIZE; i++) {
-        job_entry **pp = &tabla_propia.buckets[i];
+    /* ── table_nodes: our jobs waiting for a reply from remote nodes ── */
+    pthread_mutex_lock(&table_nodes.mutexTable);
+    for (int i = 0; i < TABLE_SIZE; i++) {
+        job_entry **pp = &table_nodes.buckets[i];
         while (*pp) {
             job_entry *j = *pp;
             if (difftime(now, j->created_at) >= JOB_TIMEOUT_SEC) {
-                fprintf(stderr, "[TIMEOUT] job %d in tabla_propia expired\n", j->job_id);
+                fprintf(stderr, "[TIMEOUT] job %d in table_nodes expired\n", j->job_id);
 
                 char job_id_str[32];
                 snprintf(job_id_str, sizeof(job_id_str), "%d", j->job_id);
@@ -177,12 +187,12 @@ static void check_job_timeouts(void) {
             }
         }
     }
-    pthread_mutex_unlock(&tabla_propia.mutexTable);
+    pthread_mutex_unlock(&table_nodes.mutexTable);
 
-    /* ── tabla_clientes: pending reservations from remote nodes ──────── */
-    pthread_mutex_lock(&tabla_clientes.lock);
-    for (int i = 0; i < HASH_SIZE; i++) {
-        job_entry **pp = &tabla_clientes.buckets[i];
+    /* ── table_clients: pending reservations from remote nodes ──────── */
+    pthread_mutex_lock(&table_clients.lock);
+    for (int i = 0; i < TABLE_SIZE; i++) {
+        job_entry **pp = &table_clients.buckets[i];
         while (*pp) {
             job_entry *j = *pp;
             if (difftime(now, j->created_at) >= JOB_TIMEOUT_SEC) {
@@ -197,7 +207,7 @@ static void check_job_timeouts(void) {
             }
         }
     }
-    pthread_mutex_unlock(&tabla_clientes.lock);
+    pthread_mutex_unlock(&table_clients.lock);
 }
 
 
@@ -385,7 +395,7 @@ void *event_loop(void *arg) {
                     fprintf(stderr, "[EVENT G] Remote node fd=%d disconnected\n", fd);
 
                     /*
-                     * Release all resources this node held (tabla_clientes).
+                     * Release all resources this node held (table_clients).
                      * TODO (resource management teammate): iterate jobs for this
                      * fd and call release_resource() for each one.
                      */
@@ -427,8 +437,8 @@ void setup_epoll(void) {
 
     // /* Initialize per-fd buffers and both job tables */
     // memset(connections, 0, sizeof(connections));
-    // init_jobs_table(&tabla_propia);
-    // init_jobs_table(&tabla_clientes);
+    // init_jobs_table(&table_nodes);
+    // init_jobs_table(&table_clients);
 
     /* Create the shared epoll instance */
     epollfd = epoll_create1(0);
@@ -469,7 +479,10 @@ void setup_epoll(void) {
     args.broadcast_timer_fd = make_timer(1, 5);
     args.timeout_timer_fd   = make_timer(5, 5);
 
-    
+    // we initialize the tables
+
+    JobsTableInit(&table_nodes);
+    JobsTableInit(&table_clients);
 
     /* Spawn the threads */
     pthread_t threads[NUM_WORKERS];

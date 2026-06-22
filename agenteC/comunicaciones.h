@@ -12,8 +12,8 @@
 #include <unistd.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <comunicaciones.h>
-#include "job_table.h"
+#include "../ResourceManager/job_table.h"
+#include "utils.h"
 
 
 int socket_server;

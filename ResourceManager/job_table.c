@@ -5,6 +5,7 @@
 #include <time.h>
 #include <string.h>
 #include "job_table.h"
+#include <sys/socket.h>
 
 #define TABLE_SIZE 256
 
@@ -36,7 +37,7 @@ void DestroyGrantedList(granted_t* granted_list){
 
 //job entry constructor
 job_entry* MakeJob(int job_id, int origin_socket, time_t time){
-    job_entry* new = malloc(sizeof(struct job_entry));
+    job_entry* new = malloc(sizeof(struct job__entry));
     assert(new);
     new->job_id = job_id;
     new->origin_socket = origin_socket;
@@ -111,7 +112,8 @@ void DestroyJobsTable(active_jobs* table){
   }
 
 /*Se supone que como las id generadas por erlang son unicas, no deberia
-  haber una mala distribucion. A CHECKEAR!!!
+  haber una mala distribucion. A CHECKEAR!!! (soy mozzi: esta bien son unicas
+  y la hash funciona eficiente por eso)
 */
 
 int HashF(int job_id){
@@ -194,4 +196,93 @@ void PrintTable(active_jobs* table){
     printf("END\n");
 }
 
+/*-------- queue functions ---------*/
+
+void init_queue(fifo_queue_t* queue) {
+    queue->head = NULL;
+    queue->tail = NULL;
+    pthread_mutex_init(&queue->queue_mutex, NULL);
+}
+
+void enqueue_job(fifo_queue_t* queue, job_entry* job, int amount) {
+    pending_node_t* new_node = malloc(sizeof(pending_node_t));
+    if (!new_node) return;
+    
+    new_node->job = job;
+    new_node->amount_req = amount;
+    new_node->next = NULL;
+
+    /* we protect the incertion to the queue */
+    pthread_mutex_lock(&queue->queue_mutex);
+
+    if (queue->tail == NULL) {
+        queue->head = new_node;
+        queue->tail = new_node;
+    } else {
+        queue->tail->next = new_node;
+        queue->tail = new_node;
+    }
+
+    pthread_mutex_unlock(&queue->queue_mutex);
+}
+
+
+void process_queue(fifo_queue_t* queue, int* available_resource, const char* resource_name) {
+    /* take the lock */
+    pthread_mutex_lock(&queue->queue_mutex);
+    int resources = 1; // to stop if we cant give the resources
+    while (queue->head != NULL && resources) {
+        pending_node_t* first = queue->head;
+
+        /* here we assume that we had the lock to the global resources previous to the call
+        of this function  */
+        if (*available_resource >= first->amount_req) {
+            *available_resource -= first->amount_req;
+
+            char msg[128];
+            strcpy(msg, ("GRANTED %d\n", first->job->job_id));
+            send(first->job->origin_socket, msg, strlen(msg), MSG_NOSIGNAL);
+
+            printf("[INFO] Desencolando: Trabajo %d obtuvo %d de %s.\n",
+                   first->job->job_id, first->amount_req, resource_name);
+
+            queue->head = first->next;
+            if (queue->head == NULL) {
+                queue->tail = NULL;
+            }
+            free(first);
+        } else {
+            resources = 0; 
+        }
+    }
+
+    pthread_mutex_unlock(&queue->queue_mutex);
+}
+
+
+/* ------- aux functions -------*/
+
+void remove_specific_resource(job_entry* job, const char* resource_name) {
+    if (job == NULL || job->resources == NULL) return;
+
+    granted_t* actual = job->resources;
+    granted_t* anterior = NULL;
+
+    while (actual != NULL) {
+        if (strcmp(actual->type, resource_name) == 0) {
+            /* we find it so we take it from the queue */
+            if (anterior == NULL) {
+                job->resources = actual->next; // it was the first-one
+            } else {
+                anterior->next = actual->next; // it was in the middle or at the end
+            }
+            
+            /* we free the memory */
+            DestroyGranted(actual);
+            return;
+        }
+        anterior = actual;
+        actual = actual->next;
+    }
+}
 
