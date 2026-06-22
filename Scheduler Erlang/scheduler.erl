@@ -62,6 +62,11 @@ coordinator_loop(Socket,Jobs_Map,GenPid) ->
             NewJobsMap = maps:put(JobId, PidJob, Jobs_Map),
             coordinator_loop(Socket, NewJobsMap, GenPid);
 
+        %% a job has asked for its status (which probably will be "waiting").
+        {status, JobId} ->
+            gen_tcp:send(Socket, "JOB_STATUS " ++ integer_to_list(JobId) ++ "\n"),
+            coordinator_loop(Socket, Jobs_Map, GenPid);
+
         %% a job has finished its work time, thus should be deleted from the map
         {finished, JobId} ->
             gen_tcp:send(Socket, "JOB_RELEASE " ++ integer_to_list(JobId) ++ "\n"),
@@ -90,6 +95,11 @@ coordinator_loop(Socket,Jobs_Map,GenPid) ->
             msg_to_job(Jobs_Map, Rest, timeout),
             coordinator_loop(Socket, Jobs_Map, GenPid);
 
+        {tcp, Socket, "WAITING " ++ Rest} ->
+            %% Rest tendrá el ID y el \n al final
+            JobId = string:trim(Rest),
+            io:format("Job ~s esta esperando~n", [JobId]),
+            coordinator_loop(Socket, Jobs_Map, GenPid);
         %% -----------------
         
         %% GET_NODES MESSAGES
@@ -127,32 +137,42 @@ coordinator_loop(Socket,Jobs_Map,GenPid) ->
 
 
 
+%% @doc Ask for resources and, if granted, simulates work.
+%% @spec job(pid(), integer(), list()) -> ok.
+job(CoordPid, JobId, Resources) ->
+    Message = job_request_format(JobId, Resources),
+    CoordPid ! {register_and_request, JobId, self(), Message},
+    job_loop(CoordPid, JobId, Resources, Message).
 
-%% @doc Ask for resources and, if granted, simulates work .
-%% @spec job(integer(), integer(), list()) -> ok.
-job(CoordPid , JobId , Resources) ->
-    Message = job_request_format(JobId,Resources),
-    CoordPid ! {register_and_request , JobId, self(), Message},
+%% @doc Loop that waits for the resource grant, sending status heartbeats every 15s if waiting.
+%% @spec job_loop(pid(), integer(), list(), string()) -> ok.
+job_loop(CoordPid, JobId, Resources, Message) ->
     receive
         granted ->
             %% Simulates work
-            Time = 1000 + rand:uniform(?JOB_MAX_TIME_WORKING), % AT LEAST, it works one sec.
+            Time = 1000 + rand:uniform(?JOB_MAX_TIME_WORKING),
             timer:sleep(Time),
             CoordPid ! {finished, JobId};
+            
         denied ->
-            %% Job unnacepted -> dies
+            %% Job unaccepted -> dies
             ok;
+            
         timeout ->
             %% Timeout -> relaunches job after some time
             Time = rand:uniform(?JOB_TIMEOUT_MAX_RELAUNCH),
             timer:sleep(Time),
             job(CoordPid, JobId, Resources);
+            
         cancelled ->
             %% C agent died or had an error -> dies
             ok
+            
+    after 15000 -> 
+        %% Send JOB_STATUS to C every 10s while waiting for granted
+        CoordPid ! {status, JobId},
+        job_loop(CoordPid, JobId, Resources, Message)
     end.
-
-
 
 %% @doc Ask for nodes information to C, and creates a job with a resources solitude, after that, it loops into itself
 %% @spec job_generator(integer(),integer()) -> no_return().
@@ -174,12 +194,4 @@ job_generator(JobId, CoordPid) ->
 
 
 
-
-
-
-
-
-%%NOTA DE DEADLOCK
-%% Se deberia implementar otra estrategia en caso que otro equipo
-%% no respete este orden (quiza con wait-die)
 
