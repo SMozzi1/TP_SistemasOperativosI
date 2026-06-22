@@ -22,10 +22,10 @@ msg_to_job(Jobs_Map, Rest, Msg) ->
 %% @doc Writes on the log that the received state was sent into the jobId
 %% @spec write_on_log(atomic(),integer()) -> ok().
 write_on_log(started, Port) ->
-    Line = io_lib:format("[~p] --- COORDINATOR STARTED on port ~p ---~n", [calendar:local_time(), Port]),
+    Line = io_lib:format("[~p] --- COORDINATOR STARTED on port ~p --- ~n~n", [calendar:local_time(), Port]),
     file:write_file("scheduler.log", Line, [append]);
 write_on_log(State, JobId) ->
-    Line = io_lib:format("[~p] JOB ~p ~p~n", [calendar:local_time(), JobId, State]),
+    Line = io_lib:format("[~p] JOB ~p ~p~n~n", [calendar:local_time(), JobId, State]),
     file:write_file("scheduler.log", Line, [append]).
 
 

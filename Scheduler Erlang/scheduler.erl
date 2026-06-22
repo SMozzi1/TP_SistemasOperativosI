@@ -11,10 +11,13 @@
 -export([job/3]).
 
 %% TIme it takes the generator to create the next job.
--define(GENERATOR_LOOP_TIME, 5000).
+-define(GENERATOR_LOOP_TIME, 15000). % 15 sec between jobs generated.
 
 %% Time at max of a job for relaunching itself
 -define(JOB_TIMEOUT_MAX_RELAUNCH, 20).
+
+%% Time at max a job takes working.
+-define(JOB_MAX_TIME_WORKING, 20000). % 20 sec at max
 
 %% Used port.
 -define(PORT, 4200).
@@ -133,7 +136,7 @@ job(CoordPid , JobId , Resources) ->
     receive
         granted ->
             %% Simulates work
-            Time = rand:uniform(20),
+            Time = 1000 + rand:uniform(?JOB_MAX_TIME_WORKING), % AT LEAST, it works one sec.
             timer:sleep(Time),
             CoordPid ! {finished, JobId};
         denied ->
