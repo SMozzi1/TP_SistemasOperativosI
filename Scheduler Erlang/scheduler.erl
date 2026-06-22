@@ -156,11 +156,11 @@ job(CoordPid , JobId , Resources) ->
 job_generator(JobId, CoordPid) ->
     CoordPid ! {get_nodes, self()},
     receive
-        {nodes, Data} -> 
-            %% First, it parsed the Data from the nodes received
-            Parsed_Data = parse_nodes(Data),
+        {nodes, Nodes} -> 
+            %% First, it parsed the Nods from the nodes received
+            Parsed_Nodes = parse_nodes(Nodes),
 
-            Resources = make_resources_for_job(Parsed_Data),
+            Resources = make_resources_for_job(Parsed_Nodes),
             spawn(?MODULE, job, [CoordPid, JobId, Resources]),
 
             timer:sleep(?GENERATOR_LOOP_TIME),

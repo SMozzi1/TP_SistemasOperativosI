@@ -5,7 +5,7 @@
 
 -export([parse_nodes/1,parse_node/1]).
 
--export([job_request_format/2,resource_to_string/1]).
+-export([job_request_format/2,resource_to_string/1, append_if_not_zero/2]).
 
 -export([pick_resource/2,make_resources_for_job/1]).
 
@@ -22,8 +22,8 @@ msg_to_job(Jobs_Map, Rest, Msg) ->
 %% @doc Writes on the log that the received state was sent into the jobId
 %% @spec write_on_log(atomic(),integer()) -> ok().
 write_on_log(started, Port) ->
-    Linea = io_lib:format("[~p] --- COORDINATOR STARTED on port ~p ---~n", [calendar:local_time(), Port]),
-    file:write_file("scheduler.log", Linea, [append]);
+    Line = io_lib:format("[~p] --- COORDINATOR STARTED on port ~p ---~n", [calendar:local_time(), Port]),
+    file:write_file("scheduler.log", Line, [append]);
 write_on_log(State, JobId) ->
     Line = io_lib:format("[~p] JOB ~p ~p~n", [calendar:local_time(), JobId, State]),
     file:write_file("scheduler.log", Line, [append]).
@@ -36,19 +36,25 @@ write_on_log(State, JobId) ->
 
 %% @doc Builds the "@IP:type:amount" string for one resource
 %% @spec resource_to_string({string(), integer(), atom(), integer()}) -> string()
-resource_to_string({IP, _Port, Tipo, Cantidad}) ->
-    "@" ++ IP ++ ":" ++ atom_to_list(Tipo) ++ ":" ++ integer_to_list(Cantidad).
+resource_to_string({IP, _Port, Type, Quantity}) ->
+    "@" ++ IP ++ ":" ++ atom_to_list(Type) ++ ":" ++ integer_to_list(Quantity).
 
 
 %% @doc Builds the full JOB_REQUEST string for the C agent
 %% @spec format_job_request(integer(), list()) -> string()
-job_request_format(JobId, Recursos) ->
-    [Cpu, Mem, Gpu] = Recursos,
-    CpuString = resource_to_string(Cpu),
-    MemString = resource_to_string(Mem),
-    GpuString = resource_to_string(Gpu),
-    "JOB_REQUEST " ++ integer_to_list(JobId) ++ " " ++ CpuString ++ " " ++ MemString ++ " " ++ GpuString ++ "\n".
+job_request_format(JobId, Resources) ->
+    [Cpu, Mem, Gpu] = Resources,
+    Base = "JOB_REQUEST " ++ integer_to_list(JobId),
+    Base1 = append_if_not_zero(Base, Cpu),
+    Base2 = append_if_not_zero(Base1, Mem),
+    Base3 = append_if_not_zero(Base2, Gpu),
+    Base3 ++ "\n".
 
+append_if_not_zero(Base, Resource) ->
+    case Resource of
+        {_IP, _Port, _Type, 0} -> Base;
+        _ -> Base ++ " " ++ resource_to_string(Resource)
+    end.
 
 %% -------------------------------
 
@@ -93,7 +99,8 @@ make_resources_for_job(Data) ->
 %% @spec pick_resource(atom(), list()) -> {string(), integer(), atom(), integer()}
 pick_resource(Type, Nodes) ->
     {IP, Port, Resources} = lists:nth(rand:uniform(length(Nodes)), Nodes),
-    {Type, TypeStr} = lists:keyfind(Type, 1, Resources),
-    {IP, Port, Type, rand:uniform(TypeStr)}.
+    {Type, TypeStorage} = lists:keyfind(Type, 1, Resources),
+    %% We pick from 0 to TypeStr (max capacity)
+    {IP, Port, Type, rand:uniform(TypeStorage + 1) - 1}.
     
 %% -------------------------------
