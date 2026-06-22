@@ -12,7 +12,8 @@
 #include <unistd.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <comunicaciones.h>
+#include <pthread.h>
+#include <sys/timerfd.h>
 #include "job_table.h"
 
 
@@ -22,9 +23,22 @@ int socket_UDP;
 int epollfd;
 int erlangfd;
 
+//MAX_FDS debe ser igual o mayor al número máximo de file descriptors que tu proceso puede tener abiertos simultáneamente
+#define MAX_FDS 1024
 
+
+#define LENG 1024
 // Max capacity for the stream reconstruction buffer
 #define BUFFER_MAX 2048
+
+//Es el buffer acumulador por socket. Lo necesitás porque TCP no garantiza que un 
+//mensaje llegue completo en un solo recv()
+typedef struct {
+    char buffer[512];
+    int accumulated_bytes;
+} ConnectionState;
+
+
 
 /*
  *  Reads from a non-blocking socket piece by piece until a newline character is found.
@@ -53,5 +67,10 @@ void C_to_erlang(int erlangfd, char* estado, char* job_id);
  communication between C agents (peer-to-peer logic).
  */
 void C_to_C(void);
+
+
+
+
+
 
 #endif /* NETWORK_UTILS_H */

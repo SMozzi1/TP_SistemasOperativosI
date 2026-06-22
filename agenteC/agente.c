@@ -32,6 +32,7 @@
 #define BUFFER_LEN 1024      // Standard buffer size for reading network data
 #define NUM_WORKERS 4        // Number of threads in our Thread Pool
 #define MAX_FDS    1024      // Maximum file descriptors supported by our read_until_newline function
+#define JOB_TIMEOUT_SEC 30
 
 #define BROADCAST_PORT 12529 
 //Need manualy be changed
@@ -43,6 +44,92 @@ int socket_erlang;
 int socket_UDP;
 int epollfd;
 int erlangfd;
+
+
+
+static int make_timer(int initial_sec, int interval_sec) {
+    int tfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
+    if (tfd < 0) fatal_error("timerfd_create failed");
+
+    struct itimerspec ts;
+    ts.it_value.tv_sec     = initial_sec;
+    ts.it_value.tv_nsec    = 0;
+    ts.it_interval.tv_sec  = interval_sec;
+    ts.it_interval.tv_nsec = 0;
+
+    if (timerfd_settime(tfd, 0, &ts, NULL) < 0) {
+        close(tfd);
+        fatal_error("timerfd_settime failed");
+    }
+
+    struct epoll_event ev;
+    ev.events  = EPOLLIN;
+    ev.data.fd = tfd;
+    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, tfd, &ev) < 0) {
+        close(tfd);
+        fatal_error("epoll_ctl ADD timer failed");
+    }
+    return tfd;
+}
+
+static void check_job_timeouts(void) {
+
+    time_t now = time(NULL);
+
+    /* ── tabla_propia: our jobs waiting for a reply from remote nodes ── */
+    pthread_mutex_lock(&tabla_propia.mutexTable);
+    for (int i = 0; i < TABLE_SIZE; i++) {
+        job_entry **pp = &tabla_propia.job_table[i];
+        while (*pp) {
+            job_entry *j = *pp;
+            if (difftime(now, j->timestamp) >= JOB_TIMEOUT_SEC) {
+                fprintf(stderr, "[TIMEOUT] job %d in tabla_propia expired\n", j->job_id);
+
+                char job_id_str[32];
+                snprintf(job_id_str, sizeof(job_id_str), "%d", j->job_id);
+
+                /* Notify Erlang only if the connection is still alive */
+                if (erlangfd >= 0) {
+                    C_to_erlang(erlangfd, "timeout", job_id_str);
+                }
+
+                /* Also clean up the conn_ctx for this job */
+                remove_conn_ctx(j->job_id);
+
+                *pp = j->next_job;
+                DestroyJob(j);
+                /* Do not advance pp: next entry is already at *pp */
+            } else {
+                pp = &(*pp)->next_job;
+            }
+        }
+    }
+    pthread_mutex_unlock(&tabla_propia.mutexTable);
+
+    /* ── tabla_clientes: reservations from remote nodes pending locally ── */
+    pthread_mutex_lock(&tabla_clientes.mutexTable);
+    for (int i = 0; i < TABLE_SIZE; i++) {
+        job_entry **pp = &tabla_clientes.job_table[i];
+        while (*pp) {
+            job_entry *j = *pp;
+            if (difftime(now, j->timestamp) >= JOB_TIMEOUT_SEC) {
+                fprintf(stderr, "[TIMEOUT] job %d in tabla_clientes expired\n", j->job_id);
+
+                /*
+                 * TODO (resource management teammate):
+                 *   release_resources_for_job(j);
+                 */
+
+                *pp = j->next_job;
+                DestroyJob(j);
+            } else {
+                pp = &(*pp)->next_job;
+            }
+        }
+    }
+    pthread_mutex_unlock(&tabla_clientes.mutexTable);
+}
+
 
 //Logging helpers 
 
@@ -110,7 +197,6 @@ static void initialize_listen_sockets(void) {
            PORT, PORT, BROADCAST_PORT);
 }
 
-
 //Timers
 /*
  * Creates a periodic timerfd and registers it in epoll.
@@ -149,56 +235,6 @@ static int make_timer(int initial_sec, int interval_sec) {
  *
  * Called periodically from the event loop (every 5 s via timerfd).
  */
-static void check_job_timeouts(void) {
-    time_t now = time(NULL);
-
-    /* ── tabla_propia: our jobs waiting for a reply from remote nodes ── */
-    pthread_mutex_lock(&tabla_propia.mutexTable);
-    for (int i = 0; i < HASH_SIZE; i++) {
-        job_entry **pp = &tabla_propia.buckets[i];
-        while (*pp) {
-            job_entry *j = *pp;
-            if (difftime(now, j->created_at) >= JOB_TIMEOUT_SEC) {
-                fprintf(stderr, "[TIMEOUT] job %d in tabla_propia expired\n", j->job_id);
-
-                char job_id_str[32];
-                snprintf(job_id_str, sizeof(job_id_str), "%d", j->job_id);
-
-                /* Notify Erlang only if the connection is still alive */
-                if (erlangfd >= 0) {
-                    C_to_erlang(erlangfd, "timeout", job_id_str);
-                }
-
-                *pp = j->next;
-                FreeJob(j);
-                /* Do not advance pp: the next entry is already at *pp */
-            } else {
-                pp = &(*pp)->next;
-            }
-        }
-    }
-    pthread_mutex_unlock(&tabla_propia.mutexTable);
-
-    /* ── tabla_clientes: pending reservations from remote nodes ──────── */
-    pthread_mutex_lock(&tabla_clientes.lock);
-    for (int i = 0; i < HASH_SIZE; i++) {
-        job_entry **pp = &tabla_clientes.buckets[i];
-        while (*pp) {
-            job_entry *j = *pp;
-            if (difftime(now, j->created_at) >= JOB_TIMEOUT_SEC) {
-                /*
-                 * TODO (resource management teammate):
-                 *   release_resources_for_job(j);
-                 */
-                *pp = j->next;
-                FreeJob(j);
-            } else {
-                pp = &(*pp)->next;
-            }
-        }
-    }
-    pthread_mutex_unlock(&tabla_clientes.lock);
-}
 
 
     //Event loop (executed by every threads)
@@ -367,7 +403,30 @@ void *event_loop(void *arg) {
                 /* result == 0: incomplete message, epoll will notify us again */
             }
 
-            /* ── G: incoming TCP data from a remote node (or outgoing socket) */
+            /* ── G: Send message from a job requesting*/
+            if (events[i].events & EPOLLOUT) {
+                int fd_listo = events[i].data.fd;
+                
+                // Aquí buscas qué Job y qué Recurso son dueños de este FD
+                job_entry* job = BuscarJobPorFD(fd_listo); // Debes implementar esta lógica de búsqueda
+                
+                if (job != NULL && job->next_req != NULL) {
+                    char msg[256];
+                    snprintf(msg, sizeof(msg), "RESERVE %d %s %d\n", 
+                            job->job_id, job->next_req->type, job->next_req->amount);
+                            
+                    // ¡Aquí enviamos el mensaje por fin!
+                    send(fd_listo, msg, strlen(msg), MSG_NOSIGNAL);
+                    
+                    // Modificamos epoll para quitar EPOLLOUT, ahora solo queremos LEER (EPOLLIN) la respuesta
+                    struct epoll_event ev;
+                    ev.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
+                    ev.data.fd = fd_listo;
+                    epoll_ctl(epollfd, EPOLL_CTL_MOD, fd_listo, &ev);
+                }
+            }
+
+            /* ── H: incoming TCP data from a remote node (or outgoing socket) */
             else {
                 char line[BUFFER_LEN];
                 int result = read_until_newline(fd, line);
@@ -400,7 +459,7 @@ void *event_loop(void *arg) {
                  * After EPOLLONESHOT fires, the kernel disables monitoring for
                  * this fd. We must re-enable it explicitly with EPOLL_CTL_MOD.
                  * Rearm for result == 0 (waiting for more data) and result == 1
-                 * (ready for the next message). Skip only for result == -1 (dead).
+                 * (ready for the next_job message). Skip only for result == -1 (dead).
                  */
                 if (result >= 0) {
                     struct epoll_event ev_rearm;

@@ -26,7 +26,7 @@
  *  Global variables
  * ═══════════════════════════════════════════════════════════════════ */
 
-fd_connection_state connections[MAX_FDS];
+ConnectionState connections[MAX_FDS];
 
 
 /*
@@ -80,7 +80,7 @@ int read_until_newline(int fd, char *output_line) {
     }
 
     /* Guard against accumulator buffer overflow */
-    if (*acc + n >= BUFFER_LEN) {
+    if (*acc + n >= LENG) {
         fprintf(stderr, "[WARN] read_until_newline: buffer overflow on fd=%d, resetting\n", fd);
         *acc = 0;
         return -1;
@@ -131,90 +131,8 @@ void C_to_erlang(int erlangfd, const char *instruction, const char *job_id) {
     }
 }
 
-/* 
- *  Incoming message from a remote node -> respond or update tables
- */
-
-/*
- * Processes an incoming TCP message from another remote C agent.
- *
- * Expected messages (node-to-node protocol §4.1):
- *   RESERVE <job_id> <resource> <amount>
- *   RELEASE <job_id> <resource> <amount>
- *   GRANTED <job_id>
- *   DENIED  <job_id>
- *
- * fd            -> FD of the remote node that sent the message
- * erlangfd -> FD of the local Erlang connection (for JOB_GRANTED/DENIED)
- * instruction   -> the already-read line (will be modified by strtok_r)
- */
-void client_to_myserver(int erlangfd, int fd_actual, char *instruction) {
-    /* Work on a copy to avoid destroying the original buffer */
-    char copy[BUFFER_LEN];
-    strncpy(copy, instruction, sizeof(copy) - 1);
-    copy[sizeof(copy) - 1] = '\0';
-
-    char *tokens[10];
-    int   num = get_token(copy, tokens, 10);
-    if (num < 1) return;
-
-    /* ── RESERVE: a remote node is requesting a local resource ──────── */
-    if (!strcmp(tokens[0], "RESERVE")) {
-        if (num < 4) {
-            fprintf(stderr, "[WARN] Malformed RESERVE: %s\n", instruction);
-            return;
-        }
-
-        char *job_id_str = tokens[1];
-        char *resource   = tokens[2];
-        int   amount     = atoi(tokens[3]);
-        int   job_id     = atoi(job_id_str);
 
 
-        //Crear trabajo, encolarlo, 
-        //Pensar logica, encolarlo para procesarlo
-
-       
-    }
-
-    /* ── RELEASE: the remote node is freeing a resource we granted it ── */
-    else if (!strcmp(tokens[0], "RELEASE")) {
-        if (num < 2) return;
-
-        int job_id = atoi(tokens[1]);
-
-    
-        /*
-         //funcion que dado el job sume a las variables globales de mem, cpu, gpu los valores 
-        */
-
-        //Desencolar el job al que le di los datos
-    }
-
-
-    /* ── GRANTED / DENIED: response to a RESERVE we sent ─────────────── */
-    else if (!strcmp(tokens[0], "GRANTED")) {
-        int job_id = atoi(token[1]);
-        job_entry* job = FindJob(&tabla_propia, job_id);
-        if (job != NULL) {
-            
-            de_donde_vino(job, fd_actual);
-        // ¡AVANZAMOS EN LA LISTA ENLAZADA!
-            job->next_req = job->next_to_request->next;
-        // Pedimos el que sigue de forma totalmente asíncrona
-            pedir_siguiente_recurso(epollfd, job);
-        }
-    }
-    else
-    {
-        int job_id = atoi(tokens[1]);
-        job_entry* job = FindJob(&tabla_propia, job_id);
-        if (job != NULL) {
-            close(fd_actual);
-
-        soltar_elementos(job);
-    }
-}
 
 void de_donde_vino(job_entry* job, int fd)
 {
@@ -265,7 +183,94 @@ void soltar_elementos(job_entry* job)
         // Avanzamos al siguiente recurso de la lista enlazada
         actual = actual->next;
     }
+    return NULL;
 }
+/* 
+ *  Incoming message from a remote node -> respond or update tables
+ */
+
+/*
+ * Processes an incoming TCP message from another remote C agent.
+ *
+ * Expected messages (node-to-node protocol §4.1):
+ *   RESERVE <job_id> <resource> <amount>
+ *   RELEASE <job_id> <resource> <amount>
+ *   GRANTED <job_id>
+ *   DENIED  <job_id>
+ *
+ * fd            -> FD of the remote node that sent the message
+ * erlangfd -> FD of the local Erlang connection (for JOB_GRANTED/DENIED)
+ * instruction   -> the already-read line (will be modified by strtok_r)
+ */
+void client_to_myserver(int erlangfd, int fd_actual, char *instruction) {
+    /* Work on a copy to avoid destroying the original buffer */
+    char copy[LENG];
+    strncpy(copy, instruction, sizeof(copy) - 1);
+    copy[sizeof(copy) - 1] = '\0';
+
+    char *tokens[10];
+    int   num = get_token(copy, tokens, 10);
+    if (num < 1) return;
+
+    /* ── RESERVE: a remote node is requesting a local resource ──────── */
+    if (!strcmp(tokens[0], "RESERVE")) {
+        if (num < 4) {
+            fprintf(stderr, "[WARN] Malformed RESERVE: %s\n", instruction);
+            return;
+        }
+
+        char *job_id_str = tokens[1];
+        char *resource   = tokens[2];
+        int   amount     = atoi(tokens[3]);
+        int   job_id     = atoi(job_id_str);
+
+
+        //Crear trabajo, encolarlo, 
+        //Pensar logica, encolarlo para procesarlo
+
+       
+    }
+
+    /* ── RELEASE: the remote node is freeing a resource we granted it ── */
+    else if (!strcmp(tokens[0], "RELEASE")) {
+        if (num < 2) return;
+
+        int job_id = atoi(tokens[1]);
+
+    
+        /*
+         //funcion que dado el job sume a las variables globales de mem, cpu, gpu los valores 
+        */
+
+        //Desencolar el job al que le di los datos
+    }
+
+
+    /* ── GRANTED / DENIED: response to a RESERVE we sent ─────────────── */
+    else if (!strcmp(tokens[0], "GRANTED")) {
+        int job_id = atoi(tokens[1]);
+        job_entry* job = FindJob(&tabla_propia, job_id);
+        if (job != NULL) {
+            
+            de_donde_vino(job, fd_actual);
+        // ¡AVANZAMOS EN LA LISTA ENLAZADA!
+            job->next_req = job->next_req->next;
+        // Pedimos el que sigue de forma totalmente asíncrona
+            pedir_siguiente_recurso(epollfd, job);
+        }
+    }
+    else
+    {
+        int job_id = atoi(tokens[1]);
+        job_entry* job = FindJob(&tabla_propia, job_id);
+        if (job != NULL) {
+            close(fd_actual);
+
+        soltar_elementos(job);
+    }
+}
+
+
 
 /*
  * Opens a non-blocking TCP connection to a remote node, registers it
@@ -278,8 +283,10 @@ void soltar_elementos(job_entry* job)
  * The destination IP, port, resource name, and amount are read from the
  * job_entry that must have been inserted into tabla_propia by erlang_to_C().
  */
-void myserver_to_client(int erlangfd __attribute__((unused)), int epollfd_local, char *instruction) {
-    char copy[BUFFER_LEN];
+void myserver_to_client(int erlangfd, int epollfd_local, char *instruction) {
+    int remote_fd;
+    
+    char copy[LENG];
     strncpy(copy, instruction, sizeof(copy) - 1);
     copy[sizeof(copy) - 1] = '\0';
 
@@ -295,15 +302,16 @@ void myserver_to_client(int erlangfd __attribute__((unused)), int epollfd_local,
     int         job_id_int = atoi(tokens[1]);
 
     //
-    job_entry *job = FindJob(&tabla_propia, job_id_int);
+    job_entry job = FindJob(&tabla_propia, job_id_int);
     if (job == NULL) {
         fprintf(stderr, "[ERROR] myserver_to_client: job %d not found in tabla_propia\n", job_id_int);
         return;
     }
 
     /* 1. Create a non-blocking TCP socket */
-    int remote_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
-    if (remote_fd < 0) {
+    remote_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+    
+    if(remote_fd < 0) {
         perror("[ERROR] myserver_to_client: socket()");
         return;
     }
@@ -377,7 +385,7 @@ void myserver_to_client(int erlangfd __attribute__((unused)), int epollfd_local,
  *   JOB_STATUS  <job_id>   (responds WAITING for now)
  */
 void erlang_to_C(int erlangfd, char *instruction, int timerfd) {
-    char copy[BUFFER_LEN];
+    char copy[LENG];
     strncpy(copy, instruction, sizeof(copy) - 1);
     copy[sizeof(copy) - 1] = '\0';
 
@@ -426,7 +434,7 @@ void erlang_to_C(int erlangfd, char *instruction, int timerfd) {
             
             // ERROR CORREGIDO: Estabas pasando 'dest_amt' dos veces. 
             // Ahora pasas el recurso ("cpu") y la cantidad (2).
-            granted_t* element = MakeGranted(dest_res, amount);
+            granted_t* element = MakeGranted(dest_res, amount, dest_ip);
             
             // OJO: Si la IP varía por recurso, deberías guardar dest_ip y el puerto 
             // DENTRO del 'element' (granted_t), no en el job global.
@@ -474,51 +482,55 @@ void pedir_elementos(int epollfd, int erlangfd, job_entry* job)
     // CASO BASE: Si ya no hay más recursos en la lista, terminamos con éxito
     if (job->next_req == NULL)
     {
-        job->next_req = NULL;
         char id_str[16];
         snprintf(id_str, sizeof(id_str), "%d", job->job_id);
-        C_to_erlang(erlangfd, "granted", id_str);
-        return;
+        C_to_erlang(erlangfd, "granted", id_str); 
+        return; // 
+    }
 
+    // EXTRAEMOS EL RECURSO ACTUAL
+    granted_t* recurso_actual = job->next_req;
+
+    // 1. Creamos el socket asíncrono
+    int remote_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+    if (remote_fd < 0) {
+        perror("[ERROR] pedir_elementos: socket()");
+        // Lógica de fallo: Podrías abortar el Job aquí y avisar a Erlang
+        return;
     }
-    else
-    {
-        //creamos un socket para mandar mensajes 
-        int remote_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
-        if (remote_fd < 0) {
-            perror("[ERROR] pedir_elementos: socket()");
-            return;
-        }
-        
-        struct sockaddr_in remote_addr;
-        memset(&remote_addr, 0, sizeof(remote_addr));
-        remote_addr.sin_family = AF_INET;
-        remote_addr.sin_port   = htons(job->dest_port);
-        inet_pton(AF_INET, job->dest_ip, &remote_addr.sin_addr);
-        
-        int conn_res = connect(remote_fd, (struct sockaddr *)&remote_addr, sizeof(remote_addr));
-        if (conn_res < 0 && errno != EINPROGRESS) {
-            perror("[ERROR] pedir_elementos: connect()");
-            close(remote_fd);
-            return;
-        }
-        
-        // Registramos en epoll. 
-        // EPOLLOUT se disparará en cuanto la conexión TCP se complete con éxito.
-        struct epoll_event ev;
-        ev.events  = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLONESHOT;
-        ev.data.fd = remote_fd;
-        if (epoll_ctl(epollfd, EPOLL_CTL_ADD, remote_fd, &ev) < 0) {
-            perror("[ERROR] epoll_ctl ADD");
-            close(remote_fd);
-            return;
-        }
-        
-        // NOTA: El 'send' NO va aquí. Debe ir en tu bucle epoll cuando detectes EPOLLOUT.
-        // Para lograrlo, debes asociar este 'remote_fd' con el 'job' y el 'recurso_actual'
-        // en una estructura de contexto o tabla intermedia de conexiones activas.
+
+    // 2. Usamos la IP y el Puerto DEL RECURSO, no del Job
+    struct sockaddr_in remote_addr;
+    memset(&remote_addr, 0, sizeof(remote_addr));
+    remote_addr.sin_family = AF_INET;
+    remote_addr.sin_port   = htons(recurso_actual->dest_port); 
+    inet_pton(AF_INET, recurso_actual->dest_ip, &remote_addr.sin_addr);
+
+    // 3. Iniciamos la conexión asíncrona
+    int conn_res;
+    conn_res = connect(remote_fd, (struct sockaddr *)&remote_addr, sizeof(remote_addr));
+    if (conn_res < 0 && errno != EINPROGRESS) {
+        perror("[ERROR] pedir_elementos: connect()");
+        close(remote_fd);
+        return;
     }
-}
+
+    // 4. Lo registramos en epoll
+    struct epoll_event ev;
+    // EPOLLOUT: Nos avisa cuando la conexión termine para poder hacer el 'send'
+    // EPOLLIN: Nos avisa cuando el nodo responda "GRANTED" o "DENIED"
+    ev.events  = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLONESHOT;
+    ev.data.fd = remote_fd;
     
+    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, remote_fd, &ev) < 0) {
+        perror("[ERROR] epoll_ctl ADD");
+        close(remote_fd);
+        return;
+    }
+
+    // Guardamos el FD temporalmente en el recurso por si lo necesitamos en el EPOLLOUT
+    recurso_actual->provider_fd = remote_fd;
+    
+}
     
     
