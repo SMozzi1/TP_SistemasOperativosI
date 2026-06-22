@@ -1,5 +1,5 @@
-#include "globals.h"
-#include "agente.c"
+#include "../agenteC/globals.h"
+#include "../agenteC/agente.c"
 
 
     active_jobs table_ourJobs;
@@ -26,4 +26,13 @@ int main(){
 
     setup_epoll();
 
+    /*Para que no me tire error */
+
+    epollfd = 2;
+    erlangfd= 1;
+    int x;
+    x = epollfd + erlangfd;
+    printf("%d", x);
+
+    return 0;
 }

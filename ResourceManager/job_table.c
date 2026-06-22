@@ -4,22 +4,23 @@
 #include <pthread.h>
 #include <time.h>
 #include <string.h>
-#include "job_table.h"
 #include <sys/socket.h>
+
+#include "../agenteC/globals.h"
+#include "job_table.h"
 
 #define TABLE_SIZE 256
 
 //granted constructor
-granted_t* MakeGranted(char* type, int amount, int dest_ip){
+granted_t* MakeGranted(char* type, int amount, char* dest_ip){
     granted_t* new = malloc(sizeof(struct granted_t));
     assert(new);
     strncpy(new->type,type, sizeof(new->type) - 1);
     new->type[sizeof(new->type) - 1] = '\0'; 
     new->amount = amount;
 
-    int providerfd; //fd que dio el recurso, (para hacer realese)
-    char dest_ip[16]; 
-    int dest_port;
+    strncpy(new->dest_ip, dest_ip, sizeof(new->dest_ip) - 1);
+    new->dest_ip[sizeof(new->dest_ip) - 1] = '\0';
 
     new->next = NULL;
     
@@ -59,6 +60,8 @@ void DestroyJob(job_entry* job){
     free(job);
 }
 
+//Funcion de Ro
+//Agrega al principio de la lista de recursos otorgados al job
 // //adds element to the list of granted resources
 // void AddResource(job_entry* job, granted_t* res){
 //    if(job->resources == NULL){ // empty list
@@ -201,93 +204,107 @@ void PrintTable(active_jobs* table){
     printf("END\n");
 }
 
-/*-------- queue functions ---------*/
+// /*-------- queue functions ---------*/
 
-void init_queue(fifo_queue_t* queue) {
-    queue->head = NULL;
-    queue->tail = NULL;
-    pthread_mutex_init(&queue->queue_mutex, NULL);
-}
+// void init_queue(fifo_queue_t* queue) {
+//     queue->head = NULL;
+//     queue->tail = NULL;
+//     pthread_mutex_init(&queue->queue_mutex, NULL);
+// }
 
-void enqueue_job(fifo_queue_t* queue, job_entry* job, int amount) {
-    pending_node_t* new_node = malloc(sizeof(pending_node_t));
-    if (!new_node) return;
+// void enqueue_job(fifo_queue_t* queue, job_entry* job, int amount) {
+//     pending_node_t* new_node = malloc(sizeof(pending_node_t));
+//     if (!new_node) return;
     
-    new_node->job = job;
-    new_node->amount_req = amount;
-    new_node->next = NULL;
+//     new_node->job = job;
+//     new_node->amount_req = amount;
+//     new_node->next = NULL;
 
-    /* we protect the incertion to the queue */
-    pthread_mutex_lock(&queue->queue_mutex);
+//     /* we protect the incertion to the queue */
+//     pthread_mutex_lock(&queue->queue_mutex);
 
-    if (queue->tail == NULL) {
-        queue->head = new_node;
-        queue->tail = new_node;
-    } else {
-        queue->tail->next = new_node;
-        queue->tail = new_node;
-    }
+//     if (queue->tail == NULL) {
+//         queue->head = new_node;
+//         queue->tail = new_node;
+//     } else {
+//         queue->tail->next = new_node;
+//         queue->tail = new_node;
+//     }
 
-    pthread_mutex_unlock(&queue->queue_mutex);
-}
-
-
-void process_queue(fifo_queue_t* queue, int* available_resource, const char* resource_name) {
-    /* take the lock */
-    pthread_mutex_lock(&queue->queue_mutex);
-    int resources = 1; // to stop if we cant give the resources
-    while (queue->head != NULL && resources) {
-        pending_node_t* first = queue->head;
-
-        /* here we assume that we had the lock to the global resources previous to the call
-        of this function  */
-        if (*available_resource >= first->amount_req) {
-            *available_resource -= first->amount_req;
-
-            char msg[128];
-            strcpy(msg, ("GRANTED %d\n", first->job->job_id));
-            send(first->job->origin_socket, msg, strlen(msg), MSG_NOSIGNAL);
-
-            printf("[INFO] Desencolando: Trabajo %d obtuvo %d de %s.\n",
-                   first->job->job_id, first->amount_req, resource_name);
-
-            queue->head = first->next;
-            if (queue->head == NULL) {
-                queue->tail = NULL;
-            }
-            free(first);
-        } else {
-            resources = 0; 
-        }
-    }
-
-    pthread_mutex_unlock(&queue->queue_mutex);
-}
+//     pthread_mutex_unlock(&queue->queue_mutex);
+// }
 
 
-/* ------- aux functions -------*/
+// void process_queue(fifo_queue_t* queue, int* available_resource, const char* resource_name) {
+//     /* take the lock */
+//     pthread_mutex_lock(&queue->queue_mutex);
+//     int resources = 1; // to stop if we cant give the resources
+//     while (queue->head != NULL && resources) {
+//         pending_node_t* first = queue->head;
 
-void remove_specific_resource(job_entry* job, const char* resource_name) {
-    if (job == NULL || job->resources == NULL) return;
+//         /* here we assume that we had the lock to the global resources previous to the call
+//         of this function  */
+//         if (*available_resource >= first->amount_req) {
+//             *available_resource -= first->amount_req;
 
-    granted_t* actual = job->resources;
-    granted_t* anterior = NULL;
+//             char msg[128];
+//             strcpy(msg, ("GRANTED %d\n", first->job->job_id));
+//             send(first->job->origin_socket, msg, strlen(msg), MSG_NOSIGNAL);
 
-    while (actual != NULL) {
-        if (strcmp(actual->type, resource_name) == 0) {
-            /* we find it so we take it from the queue */
-            if (anterior == NULL) {
-                job->resources = actual->next; // it was the first-one
-            } else {
-                anterior->next = actual->next; // it was in the middle or at the end
-            }
+//             printf("[INFO] Desencolando: Trabajo %d obtuvo %d de %s.\n",
+//                    first->job->job_id, first->amount_req, resource_name);
+
+//             queue->head = first->next;
+//             if (queue->head == NULL) {
+//                 queue->tail = NULL;
+//             }
+//             free(first);
+//         } else {
+//             resources = 0; 
+//         }
+//     }
+
+//     pthread_mutex_unlock(&queue->queue_mutex);
+// }
+
+
+// /* ------- aux functions -------*/
+
+// void remove_specific_resource(job_entry* job, const char* resource_name) {
+//     if (job == NULL || job->resources == NULL) return;
+
+//     granted_t* actual = job->resources;
+//     granted_t* anterior = NULL;
+
+//     while (actual != NULL) {
+//         if (strcmp(actual->type, resource_name) == 0) {
+//             /* we find it so we take it from the queue */
+//             if (anterior == NULL) {
+//                 job->resources = actual->next; // it was the first-one
+//             } else {
+//                 anterior->next = actual->next; // it was in the middle or at the end
+//             }
             
-            /* we free the memory */
-            DestroyGranted(actual);
-            return;
-        }
-        anterior = actual;
-        actual = actual->next;
-    }
-}
+//             /* we free the memory */
+//             DestroyGranted(actual);
+//             return;
+//         }
+//         anterior = actual;
+//         actual = actual->next;
+//     }
+// }
 
+
+
+job_entry* BuscarJobPorFD(int fd) {
+    for (int i = 0; i < TABLE_SIZE; i++) {
+        job_entry* current = table_ourjobs.job_table[i];
+        while (current != NULL) {
+            if (current->origin_socket == fd) {
+                return current;
+            }
+            current = current->next_job;
+        }
+    }
+    return NULL; // No se encontró ningún job con el fd dado
+}

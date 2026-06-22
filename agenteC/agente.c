@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 
 /*
  * agente.c
@@ -19,9 +18,10 @@
  *  - memset(connections) moved into setup_epoll() to avoid ordering issues in main().
  */
 
+#include <signal.h>
+#include "globals.h"
 #include "comunicaciones.h"
 #include "agente.h"
-#include <signal.h>
 
 
 
@@ -43,23 +43,17 @@ active_jobs table_clients;
 #define BUFFER_LEN 1024      // Standard buffer size for reading network data
 #define NUM_WORKERS 4        // Number of threads in our Thread Pool
 #define MAX_FDS    1024      // Maximum file descriptors supported by our read_until_newline function
-#define JOB_TIMEOUT_SEC 30
 
 #define BROADCAST_PORT 12529 
 //Need manualy be changed
 #define ANNOUNCEMENT_MSG "ANNOUNCE 4200 cpu:4 mem:8192 gpu:1"
 
+int JOB_TIMEOUT_SEC = 30;
+int NODE_TIMEOUT_SEC = 15;
 
 int socket_server;
 int socket_erlang;
 int socket_UDP;
-
-
-
-//Logging helpers 
-
-static void log_error(const char *msg)   { perror(msg); }
-static void fatal_error(const char *msg) { perror(msg); exit(EXIT_FAILURE); }
 
 
 //Socket initialization
@@ -122,18 +116,9 @@ static void initialize_listen_sockets(void) {
            PORT, PORT, BROADCAST_PORT);
 }
 
-//Timers
-/*
- * Creates a periodic timerfd and registers it in epoll.
- * initial_sec:  seconds until the first expiration.
- * interval_sec: repeat period in seconds.
- */
 
     //Event loop (executed by every threads)
-
-
-
-void *event_loop(void *arg) {
+static void* event_loop(void *arg) {
     worker_args_t     *args   = (worker_args_t *)arg;
     struct epoll_event events[MAX_EVENTS];
 
@@ -245,8 +230,8 @@ void *event_loop(void *arg) {
                 if (read(fd, &exp, sizeof(exp)) < 0) {
                     log_error("read timeout timer");
                 }
-                check_job_timeouts(erlangfd, table_nodes);
-                check_job_timeouts(erlangfd, table_clients);
+                check_job_timeouts(&table_nodes, NODE_TIMEOUT_SEC);
+                check_job_timeouts(&table_clients, JOB_TIMEOUT_SEC);
             }
 
             /* ── E: incoming UDP datagram from another node ─────────── */
@@ -256,28 +241,81 @@ void *event_loop(void *arg) {
                 socklen_t slen = sizeof(sender);
 
                 int bytes = recvfrom(socket_UDP, buf, sizeof(buf) - 1, 0,
-                                     (struct sockaddr *)&sender, &slen);
+                                    (struct sockaddr *)&sender, &slen);
                 if (bytes <= 0) continue;
 
-                buf[bytes] = '\0';
+                char copy[LENG];
+                strncpy(copy, buf, sizeof(copy) - 1);
+                copy[sizeof(copy) - 1] = '\0';
 
-                /*
-                 * The sender's IP comes from the sockaddr_in, NOT from the
-                 * payload (spec change, image 2).
-                 */
-                char *sender_ip = inet_ntoa(sender.sin_addr);
+                char *tokens[10];
+                int num = get_token(copy, tokens, 10);
+                if (num < 2) continue; // Al menos necesitamos ANNOUNCE y el Puerto
 
-                //printf("[UDP RECV] ANNOUNCE from %s: %s\n", sender_ip, buf);
+                // CORRECCIÓN 1: 'inet_ntop' es 100% seguro entre hilos
+                char sender_ip[INET_ADDRSTRLEN];
+                inet_ntop(AF_INET, &(sender.sin_addr), sender_ip, sizeof(sender_ip));
 
-                /*
-                 * TODO (node management teammate):
-                 *   Parse "ANNOUNCE <port> <resources>" from buf,
-                 *   then update the active node table with:
-                 *     - IP        = sender_ip
-                 *     - port, resources = parsed from buf
-                 *     - timestamp = time(NULL)
-                 *   Protect with a mutex if the table is shared across threads.
-                 */
+                int nodo_puerto = atoi(tokens[1]);
+                
+                // Usamos el puerto como ID temporal para el nodo, o define tu propia lógica de ID
+                int nodo_id = nodo_puerto; 
+
+                // CORRECCIÓN 3: Evitar duplicados. Buscamos si el nodo ya existía
+                job_entry* nodo = FindJob(&table_nodes, nodo_id);
+                
+                if (nodo != NULL) {
+                    // Si ya existía, liberamos la lista de recursos viejos para no perder memoria
+                    granted_t* current_res = nodo->resources;
+                    while (current_res != NULL) {
+                        granted_t* next_res = current_res->next;
+                        free(current_res);
+                        current_res = next_res;
+                    }
+                    nodo->resources = NULL; // Limpiamos la cabecera
+                } else {
+                    // Si es un nodo nuevo, lo creamos de cero
+                    nodo = MakeJob(nodo_id, nodo_puerto, args->broadcast_timer_fd);
+                }
+
+                // Puntero para usar con strtok_r
+                char *saveptr1; 
+
+                // Procesamos los recursos
+                for(int i = 2; i < num; i++) {
+                    char *res_token = tokens[i]; 
+                    
+                    // CORRECCIÓN 2: Usamos 'strtok_r' (reentrant) que es seguro para hilos
+                    char *res_type  = strtok_r(res_token, ":", &saveptr1);
+                    char *res_amt   = strtok_r(NULL, ":", &saveptr1);
+
+                    if (res_type && res_amt) {
+                        granted_t* res = malloc(sizeof(granted_t));
+                        if (res == NULL) continue;
+
+                        strncpy(res->type, res_type, sizeof(res->type) - 1);
+                        res->type[sizeof(res->type) - 1] = '\0';
+                        
+                        res->amount = atoi(res_amt);
+                        res->provider_fd = -1; 
+                        
+                        strncpy(res->dest_ip, sender_ip, sizeof(res->dest_ip) - 1);
+                        res->dest_ip[sizeof(res->dest_ip) - 1] = '\0';
+                        
+                        res->dest_port = nodo_puerto;
+                        
+                        // Insertar al principio de la lista enlazada del nodo
+                        res->next = nodo->resources;
+                        nodo->resources = res;
+                    }
+                }
+
+                // Solo lo insertamos en la tabla si es un nodo que no existía previamente
+                // (Si ya existía, modificamos directamente sus recursos sobre el puntero que nos dio FindJob)
+                if (FindJob(&table_nodes, nodo_id) == NULL) {
+                    JobsTableInsert(&table_nodes, nodo); 
+                }
+                
             }
 
             /* ── F: incoming TCP data from Erlang ───────────────────── */
@@ -287,7 +325,7 @@ void *event_loop(void *arg) {
 
                 if (result == 1) {
                     printf("[ERLANG ->] %s", line);
-                    erlang_to_C(erlangfd, line, args->timeout_timer_fd);
+                    erlang_to_C(line, args->timeout_timer_fd);
                 } else if (result == -1) {
                     log_error("[EVENT F] Erlang disconnected");
                     epoll_ctl(epollfd, EPOLL_CTL_DEL, erlangfd, NULL);
@@ -298,8 +336,8 @@ void *event_loop(void *arg) {
                 /* result == 0: incomplete message, epoll will notify us again */
             }
 
-            /* ── G: Send message from a job requesting*/
-            if (events[i].events & EPOLLOUT) {
+            /* ── G: Send message from a job requesting - Request job*/
+            else if (events[i].events & EPOLLOUT) {
                 //Este fd es el que esta relacionado a un tipo de dato 
                 int fd_listo = events[i].data.fd;
                 
@@ -322,7 +360,8 @@ void *event_loop(void *arg) {
                 }
             }
 
-            /* ── H: incoming TCP data from a remote node (or outgoing socket) */
+            /* ── H: incoming TCP data from a remote node (or outgoing socket) 
+                  lo que se recibe de nodos */
             else {
                 char line[BUFFER_LEN];
                 int result = read_until_newline(fd, line);
@@ -334,7 +373,7 @@ void *event_loop(void *arg) {
                      *  - RESERVE/RELEASE -> remote node requests or frees a resource
                      *  - GRANTED/DENIED  -> reply to a RESERVE we sent
                      */
-                    client_to_myserver(erlangfd, fd, line);
+                    client_to_myserver(fd, line);
 
                 } else if (result == -1) {
                     fprintf(stderr, "[EVENT G] Remote node fd=%d disconnected\n", fd);
@@ -373,8 +412,6 @@ void *event_loop(void *arg) {
 
 
 
-
-
 void setup_epoll(void) {
     /* Ignore SIGPIPE: if a peer closes while we are writing, send()
      * returns -1 with errno=EPIPE instead of killing the process.  */
@@ -400,7 +437,7 @@ void setup_epoll(void) {
     ev_s.events  = EPOLLIN | EPOLLEXCLUSIVE;
     ev_s.data.fd = socket_server;
 
-    ev_e.events  = EPOLLIN | EPOLLEXCLUSIVE;
+    ev_e.events  = EPOLLIN | EPOLLEXCLUSIVE | EPOLLONESHOT; 
     ev_e.data.fd = socket_erlang;
 
     ev_u.events  = EPOLLIN;   /* UDP does not need EPOLLEXCLUSIVE */
@@ -421,8 +458,8 @@ void setup_epoll(void) {
      * for the timer read itself (check_job_timeouts uses its own mutex internally).
      */
     static worker_args_t args;  /* static so it outlives this stack frame */
-    args.broadcast_timer_fd = make_timer(epollfd, 1, 5);
-    args.timeout_timer_fd   = make_timer(epollfd ,5, 5);
+    args.broadcast_timer_fd = make_timer(1, 5);
+    args.timeout_timer_fd   = make_timer(5, 5);
 
     /* Spawn the threads */
     pthread_t threads[NUM_WORKERS];
