@@ -23,9 +23,9 @@ typedef struct p_queue_t {
 } p_queue_t;
 
 typedef struct resource_t{
-    char type[8],
-    int total,
-    int available,
+    char type[8];
+    int total;
+    int available;
     p_queue_t* pending;
 
 } resource_t; 
