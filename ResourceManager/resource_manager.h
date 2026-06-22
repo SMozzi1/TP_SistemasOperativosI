@@ -1,56 +1,35 @@
 #ifndef _RESOURCE_MANAGER_H_
 #define _RESOURCE_MANAGER_H_
 
-#include <pthread.h>
-
-
-//resource request element structure
-typedef struct  p_request_t{
-    int job_id;
-    int origin_socket; 
-    int amount_requested;
-    struct p_request_t* next_req;
-} p_request_t;
-
-//pending requests Queue.
-typedef struct p_queue_t {
-    int stop;
-    pthread_cond_t not_empty;
-    pthread_mutex_t mutexQueue;
-    p_request_t* first;
-    p_request_t* last;
-
-} p_queue_t;
-
+#include "rm_Queue.h"
+#define POOL_SIZE 3
+    
 typedef struct resource_t{
-    char type[8],
-    int total,
-    int available,
+    char type[8];
+    int total;
+    int available;
     p_queue_t* pending;
 
 } resource_t; 
 
+/*this refers to the general pool of resources this node has.
+agent might want to initialize POOL[i]->total with something like CPU_MAX const
+TODO: ask teamate if the pool should be initialized by agent and not here*/
 
+extern resource_t POOL[POOL_SIZE];
+POOL[0]->type = "cpu";
+POOL[1]->type = "mem";
+POOL[2]->type = "gpu"; 
 
-p_request_t* MakeRequest(int job_id, int origin_socket, int amount);
+resource_t* MakeResource(char* type, int amount);
 
-void DestroyRequest(p_request_t* request); 
+void DestroyResource(resource_t* res);
 
-p_queue_t* MakeQueue(); 
+resource_t* WhichResource(char* type);
 
-int IsEmpty(p_queue_t* resource_queue); 
+int Reserve(active_jobs* table, int job_id, int socketfd , char* type, int amount);
 
-void EnqueueRequest(p_queue_t* resource_queue, p_request_t* request);
+void RetryPending(active_jobs* table, resource_t* res);
 
-p_request_t* DequeueRequest(p_queue_t* resource_queue); 
-
-void DestroyQueue(p_queue_t* resource_queue); 
-
-void StopQueue(p_queue_t* resource_queue);
-
-void PrintQueue(p_queue_t* resource_queue); 
-
-void DiscardRequest(p_queue_t* resource_queue);
-
-#endif /*_RESOURCE_MANAGER_H_*/
-
+void Release(active_jobs* table ,int job_id);
+#endif/*_RESOURCE_MANAGER_H_*/
