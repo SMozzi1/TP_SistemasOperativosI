@@ -1,20 +1,7 @@
-#define _GNU_SOURCE
+// #define _GNU_SOURCE
 
 #include "utils.h"
-#include "../ResourceManager/job_table.h"
-#include "globals.h"
 
-#include <time.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <sys/epoll.h>
-#include <sys/timerfd.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <errno.h>
-#include <pthread.h>
 
 
 #define JOB_TIMEOUT_SEC 30
@@ -32,21 +19,27 @@ typedef struct {
     pthread_mutex_t mutex; // Este mutex protege a las 3 variables de arriba
 } resource_pool_t;
 */
-extern int cpu_available;
-extern int mem_available;
-extern int gpu_available;
-extern pthread_mutex_t mutex_resources;
+// extern int cpu_available;
+// extern int mem_available;
+// extern int gpu_available;
+// extern pthread_mutex_t mutex_resources;
 
-extern active_jobs table_nodes;
-extern active_jobs table_clients;
+// extern active_jobs table_nodes;
+// extern active_jobs table_clients;
 
-extern fifo_queue_t cpu_queue;
-extern fifo_queue_t mem_queue;
-extern fifo_queue_t gpu_queue;
+// extern fifo_queue_t cpu_queue;
+// extern fifo_queue_t mem_queue;
+// extern fifo_queue_t gpu_queue;
 
 
-//Agrego epollfd asi no 
-static int make_timer(int epollfd, int initial_sec, int interval_sec) {
+
+//Timers
+/*
+ * Creates a periodic timerfd and registers it in epoll.
+ * initial_sec:  seconds until the first expiration.
+ * interval_sec: repeat period in seconds.
+ */
+int make_timer(int initial_sec, int interval_sec) {
     int tfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
     if (tfd < 0) fatal_error("timerfd_create failed");
 
@@ -71,91 +64,91 @@ static int make_timer(int epollfd, int initial_sec, int interval_sec) {
     return tfd;
 }
 
-//Se llamara a esta fucnion 2 veces
-//Se le pasa la tabla de nodos
-//Se le pasa la tabla de clientes
-static void check_job_timeouts(int erlangfd, active_jobs tabla_propia) {
+
+void check_job_timeouts(active_jobs* tabla, int timeout_sec) {
+    if (tabla == NULL) return;
 
     time_t now = time(NULL);
 
-    /* ── tabla_propia: our jobs waiting for a reply from remote nodes ── */
-    pthread_mutex_lock(&tabla_propia.mutexTable);
+    // Bloqueamos el mutex específico de la tabla que nos pasaron
+    pthread_mutex_lock(&tabla->mutexTable);
+    
     for (int i = 0; i < TABLE_SIZE; i++) {
-        job_entry **pp = &tabla_propia.job_table[i];
+        // CORRECCIÓN: Se necesita el '&' para obtener el puntero al puntero del bucket
+        job_entry **pp = &tabla->job_table[i]; 
+        
         while (*pp) {
             job_entry *j = *pp;
-            if (difftime(now, j->timestamp) >= JOB_TIMEOUT_SEC){
-                fprintf(stderr, "[TIMEOUT] job %d in tabla_propia expired\n", j->job_id);
+            
+            // Evaluamos si el trabajo superó el timeout recibido por parámetro
+            if (difftime(now, j->timestamp) >= timeout_sec) {
+                fprintf(stderr, "[TIMEOUT] Job %d expired.\n", j->job_id);
 
-                char job_id_str[32];
-                snprintf(job_id_str, sizeof(job_id_str), "%d", j->job_id);
+                // ─── 1. LIBERACIÓN DE RECURSOS (granted_t) ─────────────────
+                // Si esta tabla es 'table_clients', debemos devolver los recursos
+                // al pool local (cpu_available, mem_available, etc.)
+                pthread_mutex_lock(&mutex_resources); // Mutex global de tus contadores
+                
+                granted_t *res = j->resources;
+                while (res != NULL) {
+                    granted_t *next_res = res->next;
 
-                /* Notify Erlang only if the connection is still alive */
-                if (erlangfd >= 0) {
-                    C_to_erlang(erlangfd, "timeout", job_id_str);
+                    // Si los recursos son locales, los devolvemos al servidor
+                    if (strcmp(res->type, "cpu") == 0) {
+                        cpu_available += res->amount;
+                    } else if (strcmp(res->type, "mem") == 0) {
+                        mem_available += res->amount;
+                    } else if (strcmp(res->type, "gpu") == 0) {
+                        gpu_available += res->amount;
+                    }
+
+                    // Liberamos la memoria del nodo de recurso
+                    free(res); 
+                    res = next_res;
                 }
+                pthread_mutex_unlock(&mutex_resources);
 
-                /* Also clean up the conn_ctx for this job */
-                remove_conn_ctx(j->job_id);
 
-                *pp = j->next_job;
-                DestroyJob(j);
-                /* Do not advance pp: next entry is already at *pp */
+                // ─── 2. DESENGANCHAR DE LA TABLA HASH ──────────────────────
+                *pp = j->next_job; // El puntero anterior ahora apunta al siguiente
+                
+                // Decrementamos el contador de trabajos activos de la estructura
+                tabla->active_count--;
+
+                // ─── 3. DESTRUIR EL JOB ────────────────────────────────────
+                DestroyJob(j); 
+                
+                // NOTA: No avanzamos 'pp' porque el siguiente elemento ya quedó en *pp
             } else {
+                // Si no expiró, avanzamos normalmente al siguiente nodo del encadenamiento
                 pp = &(*pp)->next_job;
             }
         }
     }
-    pthread_mutex_unlock(&tabla_propia.mutexTable);
-
-    /* ── table_clients: reservations from remote nodes pending locally ── */
-    pthread_mutex_lock(&table_clients.mutexTable);
-    for (int i = 0; i < TABLE_SIZE; i++) {
-        job_entry **pp = &table_clients.job_table[i];
-        while (*pp) {
-            job_entry *j = *pp;
-            if (difftime(now, j->timestamp) >= JOB_TIMEOUT_SEC) {
-                fprintf(stderr, "[TIMEOUT] job %d in table_clients expired\n", j->job_id);
-
-                /*
-                 * TODO (resource management teammate):
-                 *   release_resources_for_job(j);
-                 */
-
-                *pp = j->next_job;
-                DestroyJob(j);
-            } else {
-                pp = &(*pp)->next_job;
-            }
-        }
-    }
-    pthread_mutex_unlock(&table_clients.mutexTable);
+    
+    // CORRECCIÓN: Uso de -> porque 'tabla' es un puntero
+    pthread_mutex_unlock(&tabla->mutexTable); 
 }
 
 
 //Para la liberacion de los recursos
-void update_local_resources(const char *resource_name, int amount) {
+//repensado por la estructura de granted_t
+void update_local_resources(job_entry* job) {
+
     pthread_mutex_lock(&mutex_resources);
-
-    if (strcmp(resource_name, "cpu") == 0) {
-        cpu_available += amount;
-        printf("[RESOURCE] %d CPUs devueltas. Disponibles ahora: %d\n", amount, cpu_available);
-        process_queue(&cpu_queue, cpu_available, "cpu");
+    if (strcmp(job->resources->type, "cpu") == 0) {
+        cpu_available += job->resources->amount; 
+        //process_queue(&cpu_queue, cpu_available, "cpu");
     } 
-    else if (strcmp(resource_name, "mem") == 0) {
-        mem_available += amount;
-        printf("[RESOURCE] %d MB de memoria devueltos. Disponibles ahora: %d MB\n", amount, mem_available);
-        process_queue(&mem_queue, mem_available, "mem");
+    else if (strcmp(job->resources->type, "mem") == 0) {
+        mem_available += job->resources->amount;
+        //process_queue(&mem_queue, mem_available, "mem");
     } 
-    else if (strcmp(resource_name, "gpu") == 0) {
-        gpu_available += amount;
-        printf("[RESOURCE] %d GPUs devueltas. Disponibles ahora: %d\n", amount, gpu_available);
-        process_queue(&gpu_queue, gpu_available, "gpu");
+    else if (strcmp(job->resources->type, "gpu") == 0) {
+        gpu_available += job->resources->amount;
+        //process_queue(&gpu_queue, gpu_available, "gpu");
     } 
-    else {
-        printf("[WARN] Intento de devolver un tipo de recurso desconocido: %s\n", resource_name);
-    }
-
+    
     pthread_mutex_unlock(&mutex_resources);
 }
 
@@ -197,7 +190,8 @@ void release_resources(job_entry* job)
 }
 
 
-//Asignacion de donde vino la memoria
+//Asignacion de donde vino la memoria, de que fd viene el recurso 
+
 void original_socket(job_entry* job, int fd)
 {
     if (job == NULL || job->next_req == NULL) {
@@ -214,80 +208,86 @@ void original_socket(job_entry* job, int fd)
 
 //Bucle principal para pedir elementos.
 //Va pidiendo en orden y solo da granted si lo tiene a todos
-void ask_for_next_resource(int epollfd, int erlangfd, job_entry* job)
-{
-    // CASO BASE: Si ya no hay más recursos en la lista, terminamos con éxito
-    if (job->next_req == NULL)
-    {
-        job->next_req = NULL;
-        char id_str[16];
-        snprintf(id_str, sizeof(id_str), "%d", job->job_id);
-        C_to_erlang(erlangfd, "granted", id_str);
-        return;
+//MOVIDO A COMUNICACIONES.c
+// void ask_for_next_resource(job_entry* job)
+// {
+//     // CASO BASE: Si ya no hay más recursos en la lista, terminamos con éxito
+//     if (job->next_req == NULL)
+//     {
+//         job->next_req = NULL;
+//         char id_str[16];
+//         snprintf(id_str, sizeof(id_str), "%d", job->job_id);
+//         C_to_erlang( "granted", id_str);
+//         return;
 
-    }
-    else
-    {
-        //creamos un socket para mandar mensajes 
-        int remote_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
-        if (remote_fd < 0) {
-            perror("[ERROR] pedir_elementos: socket()");
-            return;
-        }
+//     }
+//     else
+//     {
+//         //creamos un socket para mandar mensajes 
+//         int remote_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+
+//         if (remote_fd < 0) {
+//             perror("[ERROR] pedir_elementos: socket()");
+//             return;
+//         }
+//         job->origin_socket = remote_fd;
+//         //Cada recurso tendra un id de donde viene, el puerto se tiene que buscar de la tabla,
+//         //Si no esta entonces tengo que hacer job_rejected
+//         struct sockaddr_in remote_addr;
+//         memset(&remote_addr, 0, sizeof(remote_addr));
+//         remote_addr.sin_family = AF_INET;
+//         remote_addr.sin_port   = htons(job->next_req->dest_port);
+//         inet_pton(AF_INET, job->next_req->dest_ip, &remote_addr.sin_addr);
         
-        //Cada recurso tendra un id de donde viene, el puerto se tiene que buscar de la tabla,
-        //Si no esta entonces tengo que hacer job_rejected
-        struct sockaddr_in remote_addr;
-        memset(&remote_addr, 0, sizeof(remote_addr));
-        remote_addr.sin_family = AF_INET;
-        remote_addr.sin_port   = htons(job->next_req->dest_port);
-        inet_pton(AF_INET, job->next_req->dest_ip, &remote_addr.sin_addr);
+//         int conn_res = connect(remote_fd, (struct sockaddr *)&remote_addr, sizeof(remote_addr));
+//         if (conn_res < 0 && errno != EINPROGRESS) {
+//             perror("[ERROR] pedir_elementos: connect()");
+//             close(remote_fd);
+//             return;
+//         }
         
-        int conn_res = connect(remote_fd, (struct sockaddr *)&remote_addr, sizeof(remote_addr));
-        if (conn_res < 0 && errno != EINPROGRESS) {
-            perror("[ERROR] pedir_elementos: connect()");
-            close(remote_fd);
-            return;
-        }
+//         // Registramos en epoll. 
+//         // EPOLLOUT se disparará en cuanto la conexión TCP se complete con éxito.
+//         struct epoll_event ev;
+//         ev.events  = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLONESHOT;
+//         ev.data.fd = remote_fd;
+//         if (epoll_ctl(epollfd, EPOLL_CTL_ADD, remote_fd, &ev) < 0) {
+//             perror("[ERROR] epoll_ctl ADD");
+//             close(remote_fd);
+//             return;
+//         }
         
-        // Registramos en epoll. 
-        // EPOLLOUT se disparará en cuanto la conexión TCP se complete con éxito.
-        struct epoll_event ev;
-        ev.events  = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLONESHOT;
-        ev.data.fd = remote_fd;
-        if (epoll_ctl(epollfd, EPOLL_CTL_ADD, remote_fd, &ev) < 0) {
-            perror("[ERROR] epoll_ctl ADD");
-            close(remote_fd);
-            return;
-        }
-        
-        // NOTA: El 'send' NO va aquí. Debe ir en tu bucle epoll cuando detectes EPOLLOUT.
-        // Para lograrlo, debes asociar este 'remote_fd' con el 'job' y el 'recurso_actual'
-        // en una estructura de contexto o tabla intermedia de conexiones activas.
-    }
-}
+//         //Se crea un socket con EPOLLOUT que reaccionara cuando la conexion este lista para mandar el mensaje de reserve
+//         //el send esta en la funcion event_loop, cuando se pueda mandar el mensaje de reserve, se manda y se cambia el epoll a EPOLLIN para esperar la respuesta del nodo remoto
+//     }
+// }
 
 
+//Echa con la estructura de Ro
 //Si le llega un pedido de recurso, lo encola en la cola correspondiente y luego llama a reserve_elements para intentar asignar recursos a los trabajos en espera
 void enqueue_jobs(const char* resource, int job_id, int amount, int fd_actual) {
-    MakeRequest(job_id, fd_actual, amount);
+    p_request_t* rq = MakeRequest(job_id, fd_actual, amount);
 
     if(!strcmp(resource, "cpu")) {
-        EnqueueRequest(&cpu_queue, job_id);
+        EnqueueRequest(&cpu_queue, rq);
     } else if (!strcmp(resource, "mem")) {
-        EnqueueRequest(&mem_queue, job_id);
+        EnqueueRequest(&mem_queue, rq);
     } else {
-        EnqueueRequest(&gpu_queue, job_id);
+        EnqueueRequest(&gpu_queue, rq);
     }
 
     reserve_elements();
 }
 
 
+//Echa con la estructura de Ro
 //Otorgara tantos recursos tenga disponibles y se encargara de enviar el mensaje de granted a los clientes
-void reserve_elements() {
+void reserve_elements() {   
+    // Buffer para armar el mensaje dinámicamente "GRANTED <id>\n"
+    char msg[64]; 
     
     // ─── 1. PROCESAR COLA DE CPU ─────────────────────────────────────
+    
     while (cpu_queue.first != NULL && cpu_available >= cpu_queue.first->amount_requested) {
         p_request_t* req = DequeueRequest(&cpu_queue);
         if (req != NULL) {
@@ -301,12 +301,15 @@ void reserve_elements() {
             
             AddResource(nuevo_activo, recurso);
             JobsTableInsert(&table_clients, nuevo_activo);
-            //agregar id 
-
-            send(req->origin_socket, strcat("GRANTED ", ), 8, MSG_NOSIGNAL);
+            
+            // CAMBIO: Formateamos el string incluyendo el ID y el salto de línea
+            snprintf(msg, sizeof(msg), "GRANTED %d\n", req->job_id);
+            // Enviamos el tamaño exacto del string formateado
+            send(req->origin_socket, msg, strlen(msg), MSG_NOSIGNAL);
+            
             printf("[SERVER] Job %d: CPU otorgada. Registrado en table_clients.\n", req->job_id);
 
-            DiscardRequest(req); 
+            DestroyRequest(req); 
         }
     }
 
@@ -319,15 +322,19 @@ void reserve_elements() {
             pthread_mutex_unlock(&mutex_resources);
 
             job_entry* nuevo_activo = MakeJob(req->job_id, req->origin_socket, 0);
-            granted_t* recurso = MakeGranted("mem", req->amount_requested, "local");
+            char* ip = nuevo_activo->resources->dest_ip; // Asignamos la IP del recurso otorgado
+            granted_t* recurso = MakeGranted("mem", req->amount_requested, ip);
             
             AddResource(nuevo_activo, recurso);
             JobsTableInsert(&table_clients, nuevo_activo);
 
-            send(req->origin_socket, "GRANTED\n", 8, MSG_NOSIGNAL);
+            // CAMBIO: Formateamos el string incluyendo el ID para Memoria
+            snprintf(msg, sizeof(msg), "GRANTED %d\n", req->job_id);
+            send(req->origin_socket, msg, strlen(msg), MSG_NOSIGNAL);
+
             printf("[SERVER] Job %d: Memoria otorgada. Registrado en table_clients.\n", req->job_id);
 
-            DiscardRequest(req);
+            DestroyRequest(req);
         }
     }
 
@@ -346,10 +353,13 @@ void reserve_elements() {
             AddResource(nuevo_activo, recurso);
             JobsTableInsert(&table_clients, nuevo_activo);
 
-            send(req->origin_socket, "GRANTED\n", 8, MSG_NOSIGNAL);
+            // CAMBIO: Formateamos el string incluyendo el ID para GPU
+            snprintf(msg, sizeof(msg), "GRANTED %d\n", req->job_id);
+            send(req->origin_socket, msg, strlen(msg), MSG_NOSIGNAL);
+
             printf("[SERVER] Job %d: GPU otorgada. Registrado en table_clients.\n", req->job_id);
 
-            DiscardRequest(req);
+            DestroyRequest(req);
         }
     }
 }

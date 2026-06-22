@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 
 /*
  * agente.c
@@ -19,9 +18,10 @@
  *  - memset(connections) moved into setup_epoll() to avoid ordering issues in main().
  */
 
+#include <signal.h>
+#include "globals.h"
 #include "comunicaciones.h"
 #include "agente.h"
-#include <signal.h>
 
 
 
@@ -43,23 +43,17 @@ active_jobs table_clients;
 #define BUFFER_LEN 1024      // Standard buffer size for reading network data
 #define NUM_WORKERS 4        // Number of threads in our Thread Pool
 #define MAX_FDS    1024      // Maximum file descriptors supported by our read_until_newline function
-#define JOB_TIMEOUT_SEC 30
 
 #define BROADCAST_PORT 12529 
 //Need manualy be changed
 #define ANNOUNCEMENT_MSG "ANNOUNCE 4200 cpu:4 mem:8192 gpu:1"
 
+int JOB_TIMEOUT_SEC = 30;
+int NODE_TIMEOUT_SEC = 15;
 
 int socket_server;
 int socket_erlang;
 int socket_UDP;
-
-
-
-//Logging helpers 
-
-static void log_error(const char *msg)   { perror(msg); }
-static void fatal_error(const char *msg) { perror(msg); exit(EXIT_FAILURE); }
 
 
 //Socket initialization
@@ -122,16 +116,9 @@ static void initialize_listen_sockets(void) {
            PORT, PORT, BROADCAST_PORT);
 }
 
-//Timers
-/*
- * Creates a periodic timerfd and registers it in epoll.
- * initial_sec:  seconds until the first expiration.
- * interval_sec: repeat period in seconds.
- */
 
     //Event loop (executed by every threads)
-
-void *event_loop(void *arg) {
+static void* event_loop(void *arg) {
     worker_args_t     *args   = (worker_args_t *)arg;
     struct epoll_event events[MAX_EVENTS];
 
@@ -243,8 +230,8 @@ void *event_loop(void *arg) {
                 if (read(fd, &exp, sizeof(exp)) < 0) {
                     log_error("read timeout timer");
                 }
-                check_job_timeouts(erlangfd, table_nodes);
-                check_job_timeouts(erlangfd, table_clients);
+                check_job_timeouts(&table_nodes, NODE_TIMEOUT_SEC);
+                check_job_timeouts(&table_clients, JOB_TIMEOUT_SEC);
             }
 
             /* ── E: incoming UDP datagram from another node ─────────── */
@@ -373,7 +360,8 @@ void *event_loop(void *arg) {
                 }
             }
 
-            /* ── H: incoming TCP data from a remote node (or outgoing socket) */
+            /* ── H: incoming TCP data from a remote node (or outgoing socket) 
+                  lo que se recibe de nodos */
             else {
                 char line[BUFFER_LEN];
                 int result = read_until_newline(fd, line);
@@ -385,7 +373,7 @@ void *event_loop(void *arg) {
                      *  - RESERVE/RELEASE -> remote node requests or frees a resource
                      *  - GRANTED/DENIED  -> reply to a RESERVE we sent
                      */
-                    client_to_myserver(erlangfd, fd, line);
+                    client_to_myserver(fd, line);
 
                 } else if (result == -1) {
                     fprintf(stderr, "[EVENT G] Remote node fd=%d disconnected\n", fd);
@@ -421,8 +409,6 @@ void *event_loop(void *arg) {
     }
     return NULL;
 }
-
-
 
 
 
@@ -472,8 +458,8 @@ void setup_epoll(void) {
      * for the timer read itself (check_job_timeouts uses its own mutex internally).
      */
     static worker_args_t args;  /* static so it outlives this stack frame */
-    args.broadcast_timer_fd = make_timer(epollfd, 1, 5);
-    args.timeout_timer_fd   = make_timer(epollfd ,5, 5);
+    args.broadcast_timer_fd = make_timer(1, 5);
+    args.timeout_timer_fd   = make_timer(5, 5);
 
     /* Spawn the threads */
     pthread_t threads[NUM_WORKERS];
