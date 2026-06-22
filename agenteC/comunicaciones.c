@@ -380,7 +380,7 @@ void client_to_myserver(int erlangfd, int fd_actual, char *instruction) {
     /* ── GRANTED / DENIED: response to a RESERVE we sent ─────────────── */
     else if (!strcmp(tokens[0], "GRANTED")) {
         int job_id = atoi(tokens[1]);
-        job_entry* job = FindJob(&table_ourjobs, job_id);
+        job_entry* job = FindJob(&table_clients, job_id);
         if (job != NULL) {
             
             de_donde_vino(job, fd_actual);
@@ -393,7 +393,7 @@ void client_to_myserver(int erlangfd, int fd_actual, char *instruction) {
     else
     {
         int job_id = atoi(tokens[1]);
-        job_entry* job = FindJob(&table_ourjobs, job_id);
+        job_entry* job = FindJob(&table_clients, job_id);
         if (job != NULL) {
             close(fd_actual);
 
@@ -401,103 +401,6 @@ void client_to_myserver(int erlangfd, int fd_actual, char *instruction) {
     }
     }
 }
-
-
-
-
-
-/*
- * Opens a non-blocking TCP connection to a remote node, registers it
- * in epoll, and sends the given instruction (RESERVE or RELEASE).
- *
- * erlangfd -> used to forward errors to Erlang if the job is missing
- * epollfd_local  -> shared epoll instance
- * instruction    -> "reserve <job_id>" or "release <job_id>"
- *
- * The destination IP, port, resource name, and amount are read from the
- * job_entry that must have been inserted into table_nodes by erlang_to_C().
- */
-
-
-
- //Este paso al final puede que lo haga con las funcione definidas en utils con 
-// void myserver_to_client(int erlangfd __attribute__((unused)), int epollfd_local, char *instruction) {
-//     char copy[BUFFER_MAX];
-//     strncpy(copy, instruction, sizeof(copy) - 1);
-//     copy[sizeof(copy) - 1] = '\0';
-//     char *tokens[10];
-//     int   num = get_token(copy, tokens, 10);
-//     if (num < 2) {
-//         fprintf(stderr, "[ERROR] myserver_to_client: missing arguments in '%s'\n", instruction);
-//         return;
-//     }
-//     const char *command    = tokens[0];
-//     int         job_id_int = atoi(tokens[1]);
-//     job_entry *job = FindJob(&table_nodes, job_id_int);
-//     if (job == NULL) {
-//         fprintf(stderr, "[ERROR] myserver_to_client: job %d not found in table_nodes\n", job_id_int);
-//         return;
-//     }
-//     /* 1. Create a non-blocking TCP socket */
-//     int remote_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
-//     if(remote_fd < 0) {
-//         perror("[ERROR] myserver_to_client: socket()");
-//         return;
-//     }
-//     /* 2. Build the destination address from the job_entry */
-//     struct sockaddr_in remote_addr;
-//     memset(&remote_addr, 0, sizeof(remote_addr));
-//     remote_addr.sin_family = AF_INET;
-//     remote_addr.sin_port   = htons(job->dest_port);
-//     inet_pton(AF_INET, job->dest_ip, &remote_addr.sin_addr);
-//     /* 3. Non-blocking connect (EINPROGRESS is expected and safe) */
-//     int conn_res = connect(remote_fd, (struct sockaddr *)&remote_addr, sizeof(remote_addr));
-//     if (conn_res < 0 && errno != EINPROGRESS) {
-//         perror("[ERROR] myserver_to_client: connect()");
-//         close(remote_fd);
-//         return;
-//     }
-//     /* 4. Register in epoll:
-//      *    - EPOLLIN     -> to read the incoming GRANTED/DENIED reply
-//      *    - EPOLLOUT    -> to detect when the async connect completes
-//      *    - EPOLLET     -> edge-triggered (consistent with the overall design)
-//      *    - EPOLLONESHOT -> only one thread processes this fd at a time     */
-//     struct epoll_event ev;
-//     ev.events  = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLONESHOT;
-//     ev.data.fd = remote_fd;
-//     if (epoll_ctl(epollfd_local, EPOLL_CTL_ADD, remote_fd, &ev) < 0) {
-//         perror("[ERROR] myserver_to_client: epoll_ctl ADD");
-//         close(remote_fd);
-//         return;
-//     }
-//     /* 5. Format and send the message based on the command */
-//     char payload[512];
-//     int  plen = 0;
-//     if (strcasecmp(command, "reserve") == 0) {
-//         for
-//         plen = snprintf(payload, sizeof(payload),
-//                         "RESERVE %d %s %d\n",
-//                         job->job_id, job->resource_req, job->amount_req);
-//     } else if (strcasecmp(command, "release") == 0) {
-//         plen = snprintf(payload, sizeof(payload),
-//                         "RELEASE %d %s %d\n",
-//                         job->job_id, job->resource_req, job->amount_req);
-//     } else {
-//         fprintf(stderr, "[WARN] myserver_to_client: unknown command '%s'\n", command);
-//         epoll_ctl(epollfd_local, EPOLL_CTL_DEL, remote_fd, NULL);
-//         close(remote_fd);
-//         return;
-//     }
-//     if (plen > 0) {
-//         ssize_t sent = send(remote_fd, payload, plen, MSG_NOSIGNAL | MSG_DONTWAIT);
-//         if (sent < 0 && errno != EAGAIN) {
-//             /* Do not close: the kernel may still buffer the message for delivery */
-//             perror("[WARN] myserver_to_client: partial or failed send");
-//         }
-//         printf("[P2P OUT] %s", payload);
-//     }
-// }
-
 
 /*
  * Processes a command received from the Erlang scheduler (§4.2):
