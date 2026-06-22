@@ -20,15 +20,6 @@
 #include "globals.h"
 
 
-/* Function prototypes */
-
-/* Initializes and configures non-blocking TCP and UDP listening sockets */
-static void initialize_listen_sockets(void);
-
-
-/* Core event loop that waits for and handles network events using epoll */
-static void *event_loop(void *arg);
-
 
 /* Creates the epoll instance, registers listening sockets, and starts the event loop */
 void setup_epoll(void);

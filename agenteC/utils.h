@@ -26,8 +26,8 @@
 #include "globals.h"
 
 
-void log_error(const char *msg)   { perror(msg); }
-void fatal_error(const char *msg) { perror(msg); exit(EXIT_FAILURE); }
+void log_error(const char *msg);
+void fatal_error(const char *msg);
 
 
 /*Estructura y funciones para trabajar con timerfd*/

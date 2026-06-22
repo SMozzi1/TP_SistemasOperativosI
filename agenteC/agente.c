@@ -30,6 +30,10 @@ int cpu_available = 4;
 int mem_available = 8192;
 int gpu_available = 1;
 
+int epollfd = -1;
+int erlangfd = -1;
+active_jobs table_ourjobs;
+
 /* Mutex para proteger el inventario local de condiciones de carrera */
 pthread_mutex_t mutex_resources = PTHREAD_MUTEX_INITIALIZER;
 

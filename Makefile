@@ -1,14 +1,12 @@
-# ─── CONFIGURACIÓN DEL COMPILADOR ─────────────────────────────────
+# ─── CONFIGURACIÓN DEL COMPILADOR C ───────────────────────────────
 CC = gcc
-# -I. y -IResourceManager le dicen al compilador dónde buscar los archivos .h
 CFLAGS = -Wall -Wextra -g -pthread -D_GNU_SOURCE -I. -IResourceManager
 LDFLAGS = -pthread
 
-# Nombre del ejecutable final
+# Nombre del ejecutable final de C
 TARGET = servidor
 
-# ─── ARCHIVOS FUENTE (.c) ─────────────────────────────────────────
-# Dejamos fuera explícitamente los archivos de test (jt_unit_test.c y rm_Queue_test.c)
+# ─── ARCHIVOS FUENTE C (.c) ───────────────────────────────────────
 SRCS = main.c \
        agenteC/agente.c \
        agenteC/comunicaciones.c \
@@ -19,22 +17,30 @@ SRCS = main.c \
 # Convierte automáticamente la lista de .c en archivos objeto .o
 OBJS = $(SRCS:.c=.o)
 
+# ─── CONFIGURACIÓN ERLANG ─────────────────────────────────────────
+ERLC = erlc
+ERL_SRCS = scheduler.erl scheduler_utils.erl
+BEAM_FILES = $(ERL_SRCS:.erl=.beam)
+
 # ─── REGLAS DE COMPILACIÓN ────────────────────────────────────────
 
-# Regla principal (se ejecuta al escribir 'make')
-all: $(TARGET)
+# Regla principal (se ejecuta al escribir 'make'). Ahora compila C y Erlang.
+all: $(TARGET) $(BEAM_FILES)
 
-# Enlaza los archivos objeto para crear el ejecutable
+# Enlaza los archivos objeto para crear el ejecutable C
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(LDFLAGS)
 
-# Regla para compilar cada archivo .c a un .o
+# Regla para compilar cada archivo C a un .o
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Limpieza de archivos temporales y el ejecutable
-clean:
-	rm -f $(OBJS) $(TARGET)
+# Regla para compilar los archivos Erlang (.erl) a (.beam)
+%.beam: %.erl
+	$(ERLC) $<
 
-# Evita conflictos si existen archivos que se llamen 'all' o 'clean'
+# Limpieza de archivos temporales, el ejecutable y los archivos compilados de Erlang
+clean:
+	rm -f $(OBJS) $(TARGET) $(BEAM_FILES) erl_crash.dump
+
 .PHONY: all clean

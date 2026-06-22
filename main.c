@@ -1,38 +1,27 @@
 #include "../agenteC/globals.h"
-#include "../agenteC/agente.c"
+#include "../agenteC/agente.h"
 
+/* Creamos las colas globales de la implementación que armaron,
+ * ya que globals.h las pide como extern */
+p_queue_t cpu_queue;
+p_queue_t mem_queue;
+p_queue_t gpu_queue;
 
-    active_jobs table_ourJobs;
-    active_jobs table_clientJobs;
-    active_jobs table_nodes;
-
-    p_queue_t cpu_queue;
-     p_queue_t mem_queue;
-     p_queue_t gpu_queue;
-
-int main(){
-
-    JobsTableInit(&table_ourJobs);
-    JobsTableInit(&table_clientJobs);
+int main() {
+    /* 1. Inicializamos las tablas con los nombres EXACTOS de globals.h */
+    JobsTableInit(&table_ourjobs);
+    JobsTableInit(&table_clients);
     JobsTableInit(&table_nodes);
 
+    /* 2. Inicializamos las colas */
     MakeQueue(&cpu_queue);
     MakeQueue(&mem_queue);
     MakeQueue(&gpu_queue);
 
-    //Para el golbals.h
-    int epollfd;
-    int erlangfd;
-
+    /* 3. Arrancamos el lazo principal.
+     * Ya no hace falta declarar epollfd ni erlangfd acá porque 
+     * viven globalmente en agente.c */
     setup_epoll();
-
-    /*Para que no me tire error */
-
-    epollfd = 2;
-    erlangfd= 1;
-    int x;
-    x = epollfd + erlangfd;
-    printf("%d", x);
 
     return 0;
 }

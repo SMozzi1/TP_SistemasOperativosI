@@ -461,3 +461,6 @@ char* obtener_string_nodos(job_entry* table[]) {
 
     return result; 
 }
+
+void log_error(const char *msg)   { perror(msg); }
+void fatal_error(const char *msg) { perror(msg); exit(EXIT_FAILURE); }

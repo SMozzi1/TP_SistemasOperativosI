@@ -7,13 +7,6 @@
 #include "utils.h"
 #include "../ResourceManager/job_table.h"
 
-
-
-int socket_server;
-int socket_erlang;
-int socket_UDP;
-
-
 //MAX_FDS debe ser igual o mayor al número máximo de file descriptors que tu proceso puede tener abiertos simultáneamente
 #define MAX_FDS 1024
 
