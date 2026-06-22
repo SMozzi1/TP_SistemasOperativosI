@@ -4,3 +4,7 @@ una funcion para agregar esos puertos al epoll. Me faltaria informarme a que ref
 conexiones TCP de forma no bloqueante en C"
 
 Tambien ver de hacer un handler para cualquier error en las conecciones y en la creacion de los sockets/epoll
+
+https://medium.com/@hajorda/non-blocking-sockets-and-i-o-multiplexing-with-epoll-in-c-bd3d8e54c20a
+
+https://csresources.github.io/SystemProgrammingWiki/SystemProgramming/Networking,-Part-7:-Nonblocking-I-O,-select(),-and-epoll/

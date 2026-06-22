@@ -7,14 +7,20 @@
 typedef struct granted_t {
     char type[8];//gpu, mem, cpu
     int amount;   //reserved amount
+
+    int provider_fd; //fd que dio el recurso, (para hacer realese)
+    char dest_ip[16];  //ip de donde quiero buscar el recurso
+    int dest_port; //Puerto de asociado a esa ip
     struct granted_t* next; //linked list of resources granted
 } granted_t;
 
+//Cambie el nombre job_entry a job__entry asi no hat errpr 
 typedef struct job_entry { 
     int job_id;
     int origin_socket;
     time_t timestamp; //checkear bien de que tipo son.
     granted_t* resources;
+    granted_t* next_req; //Puntero aux que se mueve de acuerdo a los pedidos de los otros 
     struct job_entry* next_job; //colisiones por encadenamiento.
 
 } job_entry; 
@@ -25,8 +31,12 @@ typedef struct active_jobs {
    pthread_mutex_t mutexTable; 
 } active_jobs;
 
+typedef struct active_nodes {
+    int* node_fd[TABLE_SIZE];
+}active_nodes;
+
 /*-----Granted Resource interface-----------*/
-granted_t* MakeGranted(char* type, int amount);
+granted_t* MakeGranted(char* type, int amount, char* dest_ip);
 void DestroyGranted(granted_t* granted_res);
 void DestroyGrantedList(granted_t* granted_list);
 void PrintResources(granted_t* resources);
@@ -45,5 +55,31 @@ void JobsTableInsert(active_jobs* table, job_entry* job);
 job_entry* FindJob(active_jobs* table, int job_id);
 void RemoveJob(active_jobs* table, int job_id);
 void PrintTable(active_jobs* table);
+
+
+/* ---------------- FIFO Queues for Pending Resource Requests ----------*/
+
+typedef struct pending_node_s {
+    job_entry* job;
+    int amount_req;
+    struct pending_node_s* next;
+} pending_node_t;
+
+typedef struct fifo_queue_s {
+    pending_node_t* head;
+    pending_node_t* tail;
+    pthread_mutex_t queue_mutex;
+} fifo_queue_t;
+
+/* ---------- Function prototypes for queue and resource management -------- */
+
+void init_queue(fifo_queue_t* queue);
+void enqueue_job(fifo_queue_t* queue, job_entry* job, int amount);
+void process_queue(fifo_queue_t* queue, int* available_resource, const char* resource_name);
+
+
+/*---------aux_functions--------*/
+void remove_specific_resource(job_entry* job, const char* resource_name);
+void update_local_resources(const char* resource_name, int amount);
 
 #endif /*_JOB_TABLE_H_*/
