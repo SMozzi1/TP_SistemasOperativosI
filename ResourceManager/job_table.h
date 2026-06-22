@@ -1,6 +1,11 @@
 #ifndef _JOB_TABLE_H_
 #define _JOB_TABLE_H_
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <pthread.h>
 
 #define TABLE_SIZE 256
 
@@ -9,7 +14,7 @@ typedef struct granted_t {
     int amount;   //reserved amount
 
     int provider_fd; //fd que dio el recurso, (para hacer realese)
-    char dest_ip[16];  //ip de donde quiero buscar el recurso
+    char* dest_ip;  //ip de donde quiero buscar el recurso
     int dest_port; //Puerto de asociado a esa ip
     struct granted_t* next; //linked list of resources granted
 } granted_t;
@@ -59,27 +64,34 @@ void PrintTable(active_jobs* table);
 
 /* ---------------- FIFO Queues for Pending Resource Requests ----------*/
 
-typedef struct pending_node_s {
-    job_entry* job;
-    int amount_req;
-    struct pending_node_s* next;
-} pending_node_t;
+// typedef struct pending_node_s {
+//     job_entry* job;
+//     int amount_req;
+//     struct pending_node_s* next;
+// } pending_node_t;
 
-typedef struct fifo_queue_s {
-    pending_node_t* head;
-    pending_node_t* tail;
-    pthread_mutex_t queue_mutex;
-} fifo_queue_t;
+// typedef struct fifo_queue_s {
+//     pending_node_t* head;
+//     pending_node_t* tail;
+//     pthread_mutex_t queue_mutex;
+// } fifo_queue_t;
 
-/* ---------- Function prototypes for queue and resource management -------- */
+// /* ---------- Function prototypes for queue and resource management -------- */
 
-void init_queue(fifo_queue_t* queue);
-void enqueue_job(fifo_queue_t* queue, job_entry* job, int amount);
-void process_queue(fifo_queue_t* queue, int* available_resource, const char* resource_name);
+// void init_queue(fifo_queue_t* queue);
+// void enqueue_job(fifo_queue_t* queue, job_entry* job, int amount);
+// void process_queue(fifo_queue_t* queue, int* available_resource, const char* resource_name);
 
 
-/*---------aux_functions--------*/
-void remove_specific_resource(job_entry* job, const char* resource_name);
-void update_local_resources(const char* resource_name, int amount);
+// /*---------aux_functions--------*/
+// void remove_specific_resource(job_entry* job, const char* resource_name);
+// void update_local_resources(const char* resource_name, int amount);
+
+
+
+job_entry* BuscarJobPorFD(int fd_listo);
+
+
+
 
 #endif /*_JOB_TABLE_H_*/

@@ -11,10 +11,13 @@
 -export([job/3]).
 
 %% TIme it takes the generator to create the next job.
--define(GENERATOR_LOOP_TIME, 5000).
+-define(GENERATOR_LOOP_TIME, 15000). % 15 sec between jobs generated.
 
 %% Time at max of a job for relaunching itself
 -define(JOB_TIMEOUT_MAX_RELAUNCH, 20).
+
+%% Time at max a job takes working.
+-define(JOB_MAX_TIME_WORKING, 20000). % 20 sec at max
 
 %% Used port.
 -define(PORT, 4200).
@@ -59,6 +62,11 @@ coordinator_loop(Socket,Jobs_Map,GenPid) ->
             NewJobsMap = maps:put(JobId, PidJob, Jobs_Map),
             coordinator_loop(Socket, NewJobsMap, GenPid);
 
+        %% a job has asked for its status (which probably will be "waiting").
+        {status, JobId} ->
+            gen_tcp:send(Socket, "JOB_STATUS " ++ integer_to_list(JobId) ++ "\n"),
+            coordinator_loop(Socket, Jobs_Map, GenPid);
+
         %% a job has finished its work time, thus should be deleted from the map
         {finished, JobId} ->
             gen_tcp:send(Socket, "JOB_RELEASE " ++ integer_to_list(JobId) ++ "\n"),
@@ -87,6 +95,11 @@ coordinator_loop(Socket,Jobs_Map,GenPid) ->
             msg_to_job(Jobs_Map, Rest, timeout),
             coordinator_loop(Socket, Jobs_Map, GenPid);
 
+        {tcp, Socket, "WAITING " ++ Rest} ->
+            %% Rest tendrá el ID y el \n al final
+            JobId = string:trim(Rest),
+            io:format("Job ~s esta esperando~n", [JobId]),
+            coordinator_loop(Socket, Jobs_Map, GenPid);
         %% -----------------
         
         %% GET_NODES MESSAGES
@@ -124,43 +137,53 @@ coordinator_loop(Socket,Jobs_Map,GenPid) ->
 
 
 
+%% @doc Ask for resources and, if granted, simulates work.
+%% @spec job(pid(), integer(), list()) -> ok.
+job(CoordPid, JobId, Resources) ->
+    Message = job_request_format(JobId, Resources),
+    CoordPid ! {register_and_request, JobId, self(), Message},
+    job_loop(CoordPid, JobId, Resources, Message).
 
-%% @doc Ask for resources and, if granted, simulates work .
-%% @spec job(integer(), integer(), list()) -> ok.
-job(CoordPid , JobId , Resources) ->
-    Message = job_request_format(JobId,Resources),
-    CoordPid ! {register_and_request , JobId, self(), Message},
+%% @doc Loop that waits for the resource grant, sending status heartbeats every 15s if waiting.
+%% @spec job_loop(pid(), integer(), list(), string()) -> ok.
+job_loop(CoordPid, JobId, Resources, Message) ->
     receive
         granted ->
             %% Simulates work
-            Time = rand:uniform(20),
+            Time = 1000 + rand:uniform(?JOB_MAX_TIME_WORKING),
             timer:sleep(Time),
             CoordPid ! {finished, JobId};
+            
         denied ->
-            %% Job unnacepted -> dies
+            %% Job unaccepted -> dies
             ok;
+            
         timeout ->
             %% Timeout -> relaunches job after some time
             Time = rand:uniform(?JOB_TIMEOUT_MAX_RELAUNCH),
             timer:sleep(Time),
             job(CoordPid, JobId, Resources);
+            
         cancelled ->
             %% C agent died or had an error -> dies
             ok
+            
+    after 15000 -> 
+        %% Send JOB_STATUS to C every 10s while waiting for granted
+        CoordPid ! {status, JobId},
+        job_loop(CoordPid, JobId, Resources, Message)
     end.
-
-
 
 %% @doc Ask for nodes information to C, and creates a job with a resources solitude, after that, it loops into itself
 %% @spec job_generator(integer(),integer()) -> no_return().
 job_generator(JobId, CoordPid) ->
     CoordPid ! {get_nodes, self()},
     receive
-        {nodes, Data} -> 
-            %% First, it parsed the Data from the nodes received
-            Parsed_Data = parse_nodes(Data),
+        {nodes, Nodes} -> 
+            %% First, it parsed the Nods from the nodes received
+            Parsed_Nodes = parse_nodes(Nodes),
 
-            Resources = make_resources_for_job(Parsed_Data),
+            Resources = make_resources_for_job(Parsed_Nodes),
             spawn(?MODULE, job, [CoordPid, JobId, Resources]),
 
             timer:sleep(?GENERATOR_LOOP_TIME),
