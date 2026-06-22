@@ -9,17 +9,18 @@ typedef struct granted_t {
     int amount;   //reserved amount
 
     int provider_fd; //fd que dio el recurso, (para hacer realese)
-    char dest_ip[16]; 
-    int dest_port;
+    char dest_ip[16];  //ip de donde quiero buscar el recurso
+    int dest_port; //Puerto de asociado a esa ip
     struct granted_t* next; //linked list of resources granted
 } granted_t;
 
+//Cambie el nombre job_entry a job__entry asi no hat errpr 
 typedef struct job_entry { 
     int job_id;
     int origin_socket;
     time_t timestamp; //checkear bien de que tipo son.
     granted_t* resources;
-    granted_t* next_req; //Apunta al proximo recurso a verificar, puntero que se va a mover dentro del codigo
+    granted_t* next_req; //Puntero aux que se mueve de acuerdo a los pedidos de los otros 
     struct job_entry* next_job; //colisiones por encadenamiento.
 
 } job_entry; 
@@ -35,7 +36,7 @@ typedef struct active_nodes {
 }active_nodes;
 
 /*-----Granted Resource interface-----------*/
-granted_t* MakeGranted(char* type, int amount);
+granted_t* MakeGranted(char* type, int amount, char* dest_ip);
 void DestroyGranted(granted_t* granted_res);
 void DestroyGrantedList(granted_t* granted_list);
 void PrintResources(granted_t* resources);

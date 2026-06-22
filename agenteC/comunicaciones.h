@@ -55,7 +55,7 @@ int read_until_newline(int fd, char* output_line);
  *  erlangfd The socket connected to the Erlang node.
  *  instruction The raw null-terminated string received from the socket.
  */
-void erlang_to_C(int erlangfd, char* instruction);
+void erlang_to_C(int erlangfd, char* instruction, time_t timefd);
 
 /**
   Sends a formatted response back to Erlang safely using MSG_NOSIGNAL.

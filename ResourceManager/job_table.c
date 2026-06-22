@@ -42,7 +42,7 @@ void DestroyGrantedList(granted_t* granted_list){
 
 //job entry constructor
 job_entry* MakeJob(int job_id, int origin_socket, time_t time){
-    job_entry* new = malloc(sizeof(struct job__entry));
+    job_entry* new = malloc(sizeof(struct job_entry));
     assert(new);
     new->job_id = job_id;
     new->origin_socket = origin_socket;

@@ -291,7 +291,7 @@ void client_to_myserver(int erlangfd, int fd_actual, char *instruction) {
             original_socket(job, fd_actual);
             job->next_req = job->next_req->next;
             if (job->next_req != NULL) { // if we need to keep searching for resources
-                ask_for_next_resource(epollfd, job);
+                ask_for_next_resource(epollfd, erlangfd, job);
             } else { // if we dont we signal erlang 
                 char msg[BUFFER_MAX];
                 snprintf(msg, sizeof(msg), "JOB_GRANTED %d\n", job_id);
@@ -353,8 +353,8 @@ void client_to_myserver(int erlangfd, int fd_actual, char *instruction) {
         int   job_id     = atoi(job_id_str);
 
 
-        //Crear trabajo, encolarlo, 
-        //Pensar logica, encolarlo para procesarlo
+        //encolo la peticion
+        //funcion 
 
        
     }
@@ -415,98 +415,101 @@ void client_to_myserver(int erlangfd, int fd_actual, char *instruction) {
  * job_entry that must have been inserted into table_nodes by erlang_to_C().
  */
 
-void myserver_to_client(int erlangfd __attribute__((unused)), int epollfd_local, char *instruction) {
-    char copy[BUFFER_MAX];
-
-    strncpy(copy, instruction, sizeof(copy) - 1);
-    copy[sizeof(copy) - 1] = '\0';
-
-    char *tokens[10];
-    int   num = get_token(copy, tokens, 10);
-
-    if (num < 2) {
-        fprintf(stderr, "[ERROR] myserver_to_client: missing arguments in '%s'\n", instruction);
-        return;
-    }
-
-    const char *command    = tokens[0];
-    int         job_id_int = atoi(tokens[1]);
 
 
-    job_entry *job = FindJob(&table_nodes, job_id_int);
+ //Este paso al final puede que lo haga con las funcione definidas en utils con 
+// void myserver_to_client(int erlangfd __attribute__((unused)), int epollfd_local, char *instruction) {
+//     char copy[BUFFER_MAX];
 
-    if (job == NULL) {
-        fprintf(stderr, "[ERROR] myserver_to_client: job %d not found in table_nodes\n", job_id_int);
-        return;
-    }
+//     strncpy(copy, instruction, sizeof(copy) - 1);
+//     copy[sizeof(copy) - 1] = '\0';
 
-    /* 1. Create a non-blocking TCP socket */
-    remote_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+//     char *tokens[10];
+//     int   num = get_token(copy, tokens, 10);
+
+//     if (num < 2) {
+//         fprintf(stderr, "[ERROR] myserver_to_client: missing arguments in '%s'\n", instruction);
+//         return;
+//     }
+
+//     const char *command    = tokens[0];
+//     int         job_id_int = atoi(tokens[1]);
+
+
+//     job_entry *job = FindJob(&table_nodes, job_id_int);
+
+//     if (job == NULL) {
+//         fprintf(stderr, "[ERROR] myserver_to_client: job %d not found in table_nodes\n", job_id_int);
+//         return;
+//     }
+
+//     /* 1. Create a non-blocking TCP socket */
+//     int remote_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
     
-    if(remote_fd < 0) {
-        perror("[ERROR] myserver_to_client: socket()");
-        return;
-    }
+//     if(remote_fd < 0) {
+//         perror("[ERROR] myserver_to_client: socket()");
+//         return;
+//     }
 
-    /* 2. Build the destination address from the job_entry */
-    struct sockaddr_in remote_addr;
-    memset(&remote_addr, 0, sizeof(remote_addr));
-    remote_addr.sin_family = AF_INET;
-    remote_addr.sin_port   = htons(job->dest_port);
-    inet_pton(AF_INET, job->dest_ip, &remote_addr.sin_addr);
+//     /* 2. Build the destination address from the job_entry */
+//     struct sockaddr_in remote_addr;
+//     memset(&remote_addr, 0, sizeof(remote_addr));
+//     remote_addr.sin_family = AF_INET;
+//     remote_addr.sin_port   = htons(job->dest_port);
+//     inet_pton(AF_INET, job->dest_ip, &remote_addr.sin_addr);
 
-    /* 3. Non-blocking connect (EINPROGRESS is expected and safe) */
-    int conn_res = connect(remote_fd, (struct sockaddr *)&remote_addr, sizeof(remote_addr));
-    if (conn_res < 0 && errno != EINPROGRESS) {
-        perror("[ERROR] myserver_to_client: connect()");
-        close(remote_fd);
-        return;
-    }
+//     /* 3. Non-blocking connect (EINPROGRESS is expected and safe) */
+//     int conn_res = connect(remote_fd, (struct sockaddr *)&remote_addr, sizeof(remote_addr));
+//     if (conn_res < 0 && errno != EINPROGRESS) {
+//         perror("[ERROR] myserver_to_client: connect()");
+//         close(remote_fd);
+//         return;
+//     }
 
-    /* 4. Register in epoll:
-     *    - EPOLLIN     -> to read the incoming GRANTED/DENIED reply
-     *    - EPOLLOUT    -> to detect when the async connect completes
-     *    - EPOLLET     -> edge-triggered (consistent with the overall design)
-     *    - EPOLLONESHOT -> only one thread processes this fd at a time     */
-    struct epoll_event ev;
-    ev.events  = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLONESHOT;
-    ev.data.fd = remote_fd;
+//     /* 4. Register in epoll:
+//      *    - EPOLLIN     -> to read the incoming GRANTED/DENIED reply
+//      *    - EPOLLOUT    -> to detect when the async connect completes
+//      *    - EPOLLET     -> edge-triggered (consistent with the overall design)
+//      *    - EPOLLONESHOT -> only one thread processes this fd at a time     */
+//     struct epoll_event ev;
+//     ev.events  = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLONESHOT;
+//     ev.data.fd = remote_fd;
 
-    if (epoll_ctl(epollfd_local, EPOLL_CTL_ADD, remote_fd, &ev) < 0) {
-        perror("[ERROR] myserver_to_client: epoll_ctl ADD");
-        close(remote_fd);
-        return;
-    }
+//     if (epoll_ctl(epollfd_local, EPOLL_CTL_ADD, remote_fd, &ev) < 0) {
+//         perror("[ERROR] myserver_to_client: epoll_ctl ADD");
+//         close(remote_fd);
+//         return;
+//     }
 
-    /* 5. Format and send the message based on the command */
-    char payload[512];
-    int  plen = 0;
+//     /* 5. Format and send the message based on the command */
+//     char payload[512];
+//     int  plen = 0;
 
-    if (strcasecmp(command, "reserve") == 0) {
-        for
-        plen = snprintf(payload, sizeof(payload),
-                        "RESERVE %d %s %d\n",
-                        job->job_id, job->resource_req, job->amount_req);
-    } else if (strcasecmp(command, "release") == 0) {
-        plen = snprintf(payload, sizeof(payload),
-                        "RELEASE %d %s %d\n",
-                        job->job_id, job->resource_req, job->amount_req);
-    } else {
-        fprintf(stderr, "[WARN] myserver_to_client: unknown command '%s'\n", command);
-        epoll_ctl(epollfd_local, EPOLL_CTL_DEL, remote_fd, NULL);
-        close(remote_fd);
-        return;
-    }
+//     if (strcasecmp(command, "reserve") == 0) {
+//         for
+//         plen = snprintf(payload, sizeof(payload),
+//                         "RESERVE %d %s %d\n",
+//                         job->job_id, job->resource_req, job->amount_req);
+//     } else if (strcasecmp(command, "release") == 0) {
+//         plen = snprintf(payload, sizeof(payload),
+//                         "RELEASE %d %s %d\n",
+//                         job->job_id, job->resource_req, job->amount_req);
+//     } else {
+//         fprintf(stderr, "[WARN] myserver_to_client: unknown command '%s'\n", command);
+//         epoll_ctl(epollfd_local, EPOLL_CTL_DEL, remote_fd, NULL);
+//         close(remote_fd);
+//         return;
+//     }
 
-    if (plen > 0) {
-        ssize_t sent = send(remote_fd, payload, plen, MSG_NOSIGNAL | MSG_DONTWAIT);
-        if (sent < 0 && errno != EAGAIN) {
-            /* Do not close: the kernel may still buffer the message for delivery */
-            perror("[WARN] myserver_to_client: partial or failed send");
-        }
-        printf("[P2P OUT] %s", payload);
-    }
-}
+//     if (plen > 0) {
+//         ssize_t sent = send(remote_fd, payload, plen, MSG_NOSIGNAL | MSG_DONTWAIT);
+//         if (sent < 0 && errno != EAGAIN) {
+//             /* Do not close: the kernel may still buffer the message for delivery */
+//             perror("[WARN] myserver_to_client: partial or failed send");
+//         }
+//         printf("[P2P OUT] %s", payload);
+//     }
+// }
 
 
 /*
@@ -516,7 +519,7 @@ void myserver_to_client(int erlangfd __attribute__((unused)), int epollfd_local,
  *   JOB_RELEASE <job_id>
  *   JOB_STATUS  <job_id>   (responds WAITING for now)
  */
-void erlang_to_C(int erlangfd, char *instruction, int timerfd) {
+void erlang_to_C(int erlangfd, char *instruction, time_t timer) {
 
     char copy[BUFFER_MAX];
 
@@ -529,28 +532,32 @@ void erlang_to_C(int erlangfd, char *instruction, int timerfd) {
 
     /* ── JOB_REQUEST ─────────────────────────────────────────────── */
     if (!strcmp(tokens[0], "JOB_REQUEST")) {
+
         if (num < 2) {
             fprintf(stderr, "[WARN] JOB_REQUEST missing job_id\n");
             return;
         }
 
-        char *job_id_str = tokens[1];
+        char *job_id_str = tokens[1]; //for example <1234>
         int   job_id     = atoi(job_id_str);
 
+        //If erland dont ask for any resource 
         if (num < 3) {
             /* No remote destinations: resource must be local; delegate to resource manager */
             fprintf(stderr, "[WARN] JOB_REQUEST has no remote destinations for job %s\n", job_id_str);
             C_to_erlang(erlangfd, "rejected", job_id_str);
             return;
         }
-        job_entry* newjob = MakeJob(job_id, erlangfd, timerfd);
+        
+        job_entry* newjob = MakeJob(job_id, erlangfd, timer);
 
         // 2. Un solo bucle para extraer todos los recursos
         for (int i = 2; i < num; i++) {
             char dest_copy[256];
             strncpy(dest_copy, tokens[i], sizeof(dest_copy) - 1); // <-- Usar tokens[i], no tokens[2]
             dest_copy[sizeof(dest_copy) - 1] = '\0';
-            
+            //dest copy should be like this @host:res:amount
+
             char *p = dest_copy;
             if (*p == '@') p++; 
             
@@ -579,17 +586,16 @@ void erlang_to_C(int erlangfd, char *instruction, int timerfd) {
         JobsTableInsert(&table_nodes, newjob); // O 'ownjobs' si es global
 
         // ERROR CORREGIDO: La firma real de tu función es de 3 argumentos
-        pedir_elementos(epollfd, erlangfd, newjob);
+        ask_for_next_resource(epollfd, erlangfd, newjob);
 
     }
-
     /* ── JOB_RELEASE ─────────────────────────────────────────────── */
     else if (!strcmp(tokens[0], "JOB_RELEASE")) {
         if (num < 2) return;
 
         int job_id = atoi(tokens[1]);
         job_entry* job = FindJob(&table_nodes, job_id);
-        soltar_elementos(job);
+        release_resources(job);
 
         RemoveJob(&table_nodes, job_id);
     }

@@ -1,10 +1,22 @@
-
+#define _GNU_SOURCE
 
 #include "utils.h"
-#include "job_table.h"
+#include "../ResourceManager/job_table.h"
+
+#include <time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <sys/epoll.h>
+#include <sys/timerfd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <errno.h>
+#include <pthread.h>
+
+
+#define JOB_TIMEOUT_SEC
 
 extern int cpu_available;
 extern int mem_available;
@@ -19,8 +31,8 @@ extern fifo_queue_t mem_queue;
 extern fifo_queue_t gpu_queue;
 
 
-
-static int make_timer(int initial_sec, int interval_sec) {
+//Agrego epollfd asi no 
+static int make_timer(int epollfd,int initial_sec, int interval_sec) {
     int tfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
     if (tfd < 0) fatal_error("timerfd_create failed");
 
@@ -45,17 +57,20 @@ static int make_timer(int initial_sec, int interval_sec) {
     return tfd;
 }
 
+//Se llamara a esta fucnion 2 veces
+//Se le pasa la tabla de nodos
+//Se le pasa la tabla de clientes
+static void check_job_timeouts(int erlangfd, active_jobs tabla_propia) {
 
-static void check_job_timeouts(void) {
     time_t now = time(NULL);
 
     /* ── tabla_propia: our jobs waiting for a reply from remote nodes ── */
     pthread_mutex_lock(&tabla_propia.mutexTable);
-    for (int i = 0; i < HASH_SIZE; i++) {
-        job_entry **pp = &tabla_propia.buckets[i];
+    for (int i = 0; i < TABLE_SIZE; i++) {
+        job_entry **pp = &tabla_propia.job_table[i];
         while (*pp) {
             job_entry *j = *pp;
-            if (difftime(now, j->created_at) >= JOB_TIMEOUT_SEC) {
+            if (difftime(now, j->timestamp) >= JOB_TIMEOUT_SEC){
                 fprintf(stderr, "[TIMEOUT] job %d in tabla_propia expired\n", j->job_id);
 
                 char job_id_str[32];
@@ -66,38 +81,46 @@ static void check_job_timeouts(void) {
                     C_to_erlang(erlangfd, "timeout", job_id_str);
                 }
 
-                *pp = j->next;
-                FreeJob(j);
-                /* Do not advance pp: the next entry is already at *pp */
+                /* Also clean up the conn_ctx for this job */
+                remove_conn_ctx(j->job_id);
+
+                *pp = j->next_job;
+                DestroyJob(j);
+                /* Do not advance pp: next entry is already at *pp */
             } else {
-                pp = &(*pp)->next;
+                pp = &(*pp)->next_job;
             }
         }
     }
     pthread_mutex_unlock(&tabla_propia.mutexTable);
 
-    /* ── tabla_clientes: pending reservations from remote nodes ──────── */
-    pthread_mutex_lock(&tabla_clientes.lock);
-    for (int i = 0; i < HASH_SIZE; i++) {
-        job_entry **pp = &tabla_clientes.buckets[i];
+    /* ── table_clients: reservations from remote nodes pending locally ── */
+    pthread_mutex_lock(&table_clients.mutexTable);
+    for (int i = 0; i < TABLE_SIZE; i++) {
+        job_entry **pp = &table_clients.job_table[i];
         while (*pp) {
             job_entry *j = *pp;
-            if (difftime(now, j->created_at) >= JOB_TIMEOUT_SEC) {
+            if (difftime(now, j->timestamp) >= JOB_TIMEOUT_SEC) {
+                fprintf(stderr, "[TIMEOUT] job %d in table_clients expired\n", j->job_id);
+
                 /*
                  * TODO (resource management teammate):
                  *   release_resources_for_job(j);
                  */
-                *pp = j->next;
-                FreeJob(j);
+
+                *pp = j->next_job;
+                DestroyJob(j);
             } else {
-                pp = &(*pp)->next;
+                pp = &(*pp)->next_job;
             }
         }
     }
-    pthread_mutex_unlock(&tabla_clientes.lock);
+    pthread_mutex_unlock(&table_clients.mutexTable);
 }
 
 
+
+//Para la liberacion de los recursos
 void update_local_resources(const char *resource_name, int amount) {
     pthread_mutex_lock(&mutex_resources);
 
@@ -124,6 +147,7 @@ void update_local_resources(const char *resource_name, int amount) {
 }
 
 
+//Deber
 void release_resources(job_entry* job)
 {
     // flag to see if there is a job or any resources at all
@@ -137,21 +161,21 @@ void release_resources(job_entry* job)
     while (actual != NULL && actual != job->next_req) {
         
        
-        if (actual->providerfd >= 0) {
+        if (actual->provider_fd >= 0) {
             char msg[256];
             snprintf(msg, sizeof(msg), "RELEASE %d %s %d\n", job->job_id, actual->type, actual->amount);
             
             // we send the message to the node that provided this resource
-            send(actual->providerfd, msg, strlen(msg), MSG_NOSIGNAL);
+            send(actual->provider_fd, msg, strlen(msg), MSG_NOSIGNAL);
             
             printf("[INFO] Enviado RELEASE del recurso %s al FD %d para el Job %d\n", 
-                    actual->type, actual->providerfd, job->job_id);
+                    actual->type, actual->provider_fd, job->job_id);
             
             // we close the connection with the resource
-            close(actual->providerfd);
+            close(actual->provider_fd);
         
             // we set the fd as invalid.
-            actual->providerfd = -1;
+            actual->provider_fd = -1;
         }
         
         // check the next resources
@@ -160,6 +184,7 @@ void release_resources(job_entry* job)
 }
 
 
+//Asignacion de donde vino la memoria
 void original_socket(job_entry* job, int fd)
 {
     if (job == NULL || job->next_req == NULL) {
@@ -167,13 +192,16 @@ void original_socket(job_entry* job, int fd)
     }
 
     // we asign the provider id to the resource
-    job->next_req->providerfd = fd;
+    job->next_req->provider_fd = fd;
 
     printf("[DEBUG] Asignado provider_fd = %d al recurso '%s' del Job %d\n", 
             fd, job->next_req->type, job->job_id);
 }
 
 
+
+//Bucle principal para pedir elementos.
+//Va pidiendo en orden y solo da granted si lo tiene a todos
 void ask_for_next_resource(int epollfd, int erlangfd, job_entry* job)
 {
     // CASO BASE: Si ya no hay más recursos en la lista, terminamos con éxito
@@ -195,11 +223,13 @@ void ask_for_next_resource(int epollfd, int erlangfd, job_entry* job)
             return;
         }
         
+        //Cada recurso tendra un id de donde viene, el puerto se tiene que buscar de la tabla,
+        //Si no esta entonces tengo que hacer job_rejected
         struct sockaddr_in remote_addr;
         memset(&remote_addr, 0, sizeof(remote_addr));
         remote_addr.sin_family = AF_INET;
-        remote_addr.sin_port   = htons(job->dest_port);
-        inet_pton(AF_INET, job->dest_ip, &remote_addr.sin_addr);
+        remote_addr.sin_port   = htons(job->next_req->dest_port);
+        inet_pton(AF_INET, job->next_req->dest_ip, &remote_addr.sin_addr);
         
         int conn_res = connect(remote_fd, (struct sockaddr *)&remote_addr, sizeof(remote_addr));
         if (conn_res < 0 && errno != EINPROGRESS) {

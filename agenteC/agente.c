@@ -56,91 +56,6 @@ int epollfd;
 int erlangfd;
 
 
-
-static int make_timer(int initial_sec, int interval_sec) {
-    int tfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
-    if (tfd < 0) fatal_error("timerfd_create failed");
-
-    struct itimerspec ts;
-    ts.it_value.tv_sec     = initial_sec;
-    ts.it_value.tv_nsec    = 0;
-    ts.it_interval.tv_sec  = interval_sec;
-    ts.it_interval.tv_nsec = 0;
-
-    if (timerfd_settime(tfd, 0, &ts, NULL) < 0) {
-        close(tfd);
-        fatal_error("timerfd_settime failed");
-    }
-
-    struct epoll_event ev;
-    ev.events  = EPOLLIN;
-    ev.data.fd = tfd;
-    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, tfd, &ev) < 0) {
-        close(tfd);
-        fatal_error("epoll_ctl ADD timer failed");
-    }
-    return tfd;
-}
-
-static void check_job_timeouts(void) {
-
-    time_t now = time(NULL);
-
-    /* ── tabla_propia: our jobs waiting for a reply from remote nodes ── */
-    pthread_mutex_lock(&tabla_propia.mutexTable);
-    for (int i = 0; i < TABLE_SIZE; i++) {
-        job_entry **pp = &tabla_propia.job_table[i];
-        while (*pp) {
-            job_entry *j = *pp;
-            if (difftime(now, j->timestamp) >= JOB_TIMEOUT_SEC) {
-                fprintf(stderr, "[TIMEOUT] job %d in tabla_propia expired\n", j->job_id);
-
-                char job_id_str[32];
-                snprintf(job_id_str, sizeof(job_id_str), "%d", j->job_id);
-
-                /* Notify Erlang only if the connection is still alive */
-                if (erlangfd >= 0) {
-                    C_to_erlang(erlangfd, "timeout", job_id_str);
-                }
-
-                /* Also clean up the conn_ctx for this job */
-                remove_conn_ctx(j->job_id);
-
-                *pp = j->next_job;
-                DestroyJob(j);
-                /* Do not advance pp: next entry is already at *pp */
-            } else {
-                pp = &(*pp)->next_job;
-            }
-        }
-    }
-    pthread_mutex_unlock(&tabla_propia.mutexTable);
-
-    /* ── tabla_clientes: reservations from remote nodes pending locally ── */
-    pthread_mutex_lock(&tabla_clientes.mutexTable);
-    for (int i = 0; i < TABLE_SIZE; i++) {
-        job_entry **pp = &tabla_clientes.job_table[i];
-        while (*pp) {
-            job_entry *j = *pp;
-            if (difftime(now, j->timestamp) >= JOB_TIMEOUT_SEC) {
-                fprintf(stderr, "[TIMEOUT] job %d in tabla_clientes expired\n", j->job_id);
-
-                /*
-                 * TODO (resource management teammate):
-                 *   release_resources_for_job(j);
-                 */
-
-                *pp = j->next_job;
-                DestroyJob(j);
-            } else {
-                pp = &(*pp)->next_job;
-            }
-        }
-    }
-    pthread_mutex_unlock(&tabla_clientes.mutexTable);
-}
-
-
 //Logging helpers 
 
 static void log_error(const char *msg)   { perror(msg); }
@@ -213,92 +128,6 @@ static void initialize_listen_sockets(void) {
  * initial_sec:  seconds until the first expiration.
  * interval_sec: repeat period in seconds.
  */
-static int make_timer(int initial_sec, int interval_sec) {
-    int tfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
-    if (tfd < 0) fatal_error("timerfd_create failed");
-
-    struct itimerspec ts;
-    ts.it_value.tv_sec     = initial_sec;
-    ts.it_value.tv_nsec    = 0;
-    ts.it_interval.tv_sec  = interval_sec;
-    ts.it_interval.tv_nsec = 0;
-
-    if (timerfd_settime(tfd, 0, &ts, NULL) < 0) {
-        close(tfd);
-        fatal_error("timerfd_settime failed");
-    }
-
-    struct epoll_event ev;
-    ev.events  = EPOLLIN;
-    ev.data.fd = tfd;
-    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, tfd, &ev) < 0) {
-        close(tfd);
-        fatal_error("epoll_ctl ADD timer failed");
-    }
-    return tfd;
-}
-
-/*
- * Walks table_nodes and table_clients.
- * Any job that has been pending for more than JOB_TIMEOUT_SEC seconds
- * is cancelled: JOB_TIMEOUT is sent to Erlang and the entry is removed.
- *
- * Called periodically from the event loop (every 5 s via timerfd).
- */
-<<<<<<< HEAD
-static void check_job_timeouts(void) {
-    time_t now = time(NULL);
-
-    /* ── table_nodes: our jobs waiting for a reply from remote nodes ── */
-    pthread_mutex_lock(&table_nodes.mutexTable);
-    for (int i = 0; i < TABLE_SIZE; i++) {
-        job_entry **pp = &table_nodes.buckets[i];
-        while (*pp) {
-            job_entry *j = *pp;
-            if (difftime(now, j->created_at) >= JOB_TIMEOUT_SEC) {
-                fprintf(stderr, "[TIMEOUT] job %d in table_nodes expired\n", j->job_id);
-
-                char job_id_str[32];
-                snprintf(job_id_str, sizeof(job_id_str), "%d", j->job_id);
-
-                /* Notify Erlang only if the connection is still alive */
-                if (erlangfd >= 0) {
-                    C_to_erlang(erlangfd, "timeout", job_id_str);
-                }
-
-                *pp = j->next;
-                FreeJob(j);
-                /* Do not advance pp: the next entry is already at *pp */
-            } else {
-                pp = &(*pp)->next;
-            }
-        }
-    }
-    pthread_mutex_unlock(&table_nodes.mutexTable);
-
-    /* ── table_clients: pending reservations from remote nodes ──────── */
-    pthread_mutex_lock(&table_clients.lock);
-    for (int i = 0; i < TABLE_SIZE; i++) {
-        job_entry **pp = &table_clients.buckets[i];
-        while (*pp) {
-            job_entry *j = *pp;
-            if (difftime(now, j->created_at) >= JOB_TIMEOUT_SEC) {
-                /*
-                 * TODO (resource management teammate):
-                 *   release_resources_for_job(j);
-                 */
-                *pp = j->next;
-                FreeJob(j);
-            } else {
-                pp = &(*pp)->next;
-            }
-        }
-    }
-    pthread_mutex_unlock(&table_clients.lock);
-}
-=======
->>>>>>> 321203a7f499c410676177255043a575896fce56
-
 
     //Event loop (executed by every threads)
 
@@ -313,7 +142,8 @@ void *event_loop(void *arg) {
 
         if (nfds < 0) {
             if (errno == EINTR) continue;   /* Signal interrupted the wait; safe to retry */
-            log_error("epoll_wait failed");
+                log_error("epoll_wait failed");
+
             continue;
         }
 
@@ -326,6 +156,7 @@ void *event_loop(void *arg) {
                 if (new_fd < 0) {
                     if (errno != EAGAIN && errno != EWOULDBLOCK)
                         log_error("Erlang accept4");
+
                     continue;
                 }
 
@@ -414,7 +245,8 @@ void *event_loop(void *arg) {
                 if (read(fd, &exp, sizeof(exp)) < 0) {
                     log_error("read timeout timer");
                 }
-                check_job_timeouts();
+                check_job_timeouts(erlangfd, table_nodes);
+                check_job_timeouts(erlangfd, table_clients);
             }
 
             /* ── E: incoming UDP datagram from another node ─────────── */
@@ -592,8 +424,10 @@ void setup_epoll(void) {
     args.timeout_timer_fd   = make_timer(5, 5);
 
     // we initialize the tables
-
+    //tabla de trabajos propios
     JobsTableInit(&table_nodes);
+
+    //Tabla de trabajos de Nodos Remotos
     JobsTableInit(&table_clients);
 
     /* Spawn the threads */
@@ -618,8 +452,9 @@ void setup_epoll(void) {
     close(epollfd);
 }
 
-
+//Place holder funcion que tiene 3 tablas hash 
 int initialize_connections()
 {
+    
 
 }

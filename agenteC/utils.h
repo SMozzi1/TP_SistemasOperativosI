@@ -9,6 +9,9 @@ typedef struct {
 } worker_args_t;
 
 
+void check_job_timeouts(int erlangfd, active_jobs tabla_propia);
+
+
 void update_local_resources(const char *resource_name, int amount);
 void release_resources(job_entry* job);
 void original_socket(job_entry* job, int fd);
