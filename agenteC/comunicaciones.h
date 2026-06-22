@@ -16,6 +16,7 @@
 #include "utils.h"
 #include <pthread.h>
 #include <sys/timerfd.h>
+#include "globals.h"
 
 
 

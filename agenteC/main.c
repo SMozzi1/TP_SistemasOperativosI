@@ -1,4 +1,5 @@
 #include "globals.h"
+#include "agente.c"
 
 
     active_jobs table_ourJobs;
@@ -18,5 +19,11 @@ int main(){
     MakeQueue(&cpu_queue);
     MakeQueue(&mem_queue);
     MakeQueue(&gpu_queue);
+
+    //Para el golbals.h
+    int epollfd;
+    int erlangfd;
+
+    setup_epoll();
 
 }

@@ -350,11 +350,11 @@ void client_to_myserver(int erlangfd, int fd_actual, char *instruction) {
         char *job_id_str = tokens[1];
         char *resource   = tokens[2];
         int   amount     = atoi(tokens[3]);
+
         int   job_id     = atoi(job_id_str);
 
 
-        //encolo la peticion
-        //funcion 
+        encolar_trabajo(resource, job_id, amount, fd_actual);
 
        
     }
@@ -364,20 +364,23 @@ void client_to_myserver(int erlangfd, int fd_actual, char *instruction) {
         if (num < 2) return;
 
         int job_id = atoi(tokens[1]);
+        char *resource = tokens[2];
+        int amount = atoi(tokens[3]);
 
-    
-        /*
-         //funcion que dado el job sume a las variables globales de mem, cpu, gpu los valores 
-        */
+        update_local_resources(resource, amount);
+        //Vemos si podemos reservarle a alguien que este esperando por ese recurso el recurso que se libero
+        reserve_elements();
 
-        //Desencolar el job al que le di los datos
+        job_entry* job = FindJob(&table_clients, job_id);
+        //Si me devuelven el realese, me devuelven todos los elementos que me pidieron
+        RemoveJob(&table_clients, job_id);
     }
 
 
     /* ── GRANTED / DENIED: response to a RESERVE we sent ─────────────── */
     else if (!strcmp(tokens[0], "GRANTED")) {
         int job_id = atoi(tokens[1]);
-        job_entry* job = FindJob(&tabla_propia, job_id);
+        job_entry* job = FindJob(&table_ourjobs, job_id);
         if (job != NULL) {
             
             de_donde_vino(job, fd_actual);
@@ -390,14 +393,14 @@ void client_to_myserver(int erlangfd, int fd_actual, char *instruction) {
     else
     {
         int job_id = atoi(tokens[1]);
-        job_entry* job = FindJob(&tabla_propia, job_id);
+        job_entry* job = FindJob(&table_ourjobs, job_id);
         if (job != NULL) {
             close(fd_actual);
 
         soltar_elementos(job);
     }
+    }
 }
-
 
 
 
@@ -420,44 +423,33 @@ void client_to_myserver(int erlangfd, int fd_actual, char *instruction) {
  //Este paso al final puede que lo haga con las funcione definidas en utils con 
 // void myserver_to_client(int erlangfd __attribute__((unused)), int epollfd_local, char *instruction) {
 //     char copy[BUFFER_MAX];
-
 //     strncpy(copy, instruction, sizeof(copy) - 1);
 //     copy[sizeof(copy) - 1] = '\0';
-
 //     char *tokens[10];
 //     int   num = get_token(copy, tokens, 10);
-
 //     if (num < 2) {
 //         fprintf(stderr, "[ERROR] myserver_to_client: missing arguments in '%s'\n", instruction);
 //         return;
 //     }
-
 //     const char *command    = tokens[0];
 //     int         job_id_int = atoi(tokens[1]);
-
-
 //     job_entry *job = FindJob(&table_nodes, job_id_int);
-
 //     if (job == NULL) {
 //         fprintf(stderr, "[ERROR] myserver_to_client: job %d not found in table_nodes\n", job_id_int);
 //         return;
 //     }
-
 //     /* 1. Create a non-blocking TCP socket */
 //     int remote_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
-    
 //     if(remote_fd < 0) {
 //         perror("[ERROR] myserver_to_client: socket()");
 //         return;
 //     }
-
 //     /* 2. Build the destination address from the job_entry */
 //     struct sockaddr_in remote_addr;
 //     memset(&remote_addr, 0, sizeof(remote_addr));
 //     remote_addr.sin_family = AF_INET;
 //     remote_addr.sin_port   = htons(job->dest_port);
 //     inet_pton(AF_INET, job->dest_ip, &remote_addr.sin_addr);
-
 //     /* 3. Non-blocking connect (EINPROGRESS is expected and safe) */
 //     int conn_res = connect(remote_fd, (struct sockaddr *)&remote_addr, sizeof(remote_addr));
 //     if (conn_res < 0 && errno != EINPROGRESS) {
@@ -465,7 +457,6 @@ void client_to_myserver(int erlangfd, int fd_actual, char *instruction) {
 //         close(remote_fd);
 //         return;
 //     }
-
 //     /* 4. Register in epoll:
 //      *    - EPOLLIN     -> to read the incoming GRANTED/DENIED reply
 //      *    - EPOLLOUT    -> to detect when the async connect completes
@@ -474,17 +465,14 @@ void client_to_myserver(int erlangfd, int fd_actual, char *instruction) {
 //     struct epoll_event ev;
 //     ev.events  = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLONESHOT;
 //     ev.data.fd = remote_fd;
-
 //     if (epoll_ctl(epollfd_local, EPOLL_CTL_ADD, remote_fd, &ev) < 0) {
 //         perror("[ERROR] myserver_to_client: epoll_ctl ADD");
 //         close(remote_fd);
 //         return;
 //     }
-
 //     /* 5. Format and send the message based on the command */
 //     char payload[512];
 //     int  plen = 0;
-
 //     if (strcasecmp(command, "reserve") == 0) {
 //         for
 //         plen = snprintf(payload, sizeof(payload),
@@ -500,7 +488,6 @@ void client_to_myserver(int erlangfd, int fd_actual, char *instruction) {
 //         close(remote_fd);
 //         return;
 //     }
-
 //     if (plen > 0) {
 //         ssize_t sent = send(remote_fd, payload, plen, MSG_NOSIGNAL | MSG_DONTWAIT);
 //         if (sent < 0 && errno != EAGAIN) {
@@ -607,8 +594,16 @@ void erlang_to_C(int erlangfd, char *instruction, time_t timer) {
         if (num < 2) return;
         C_to_erlang(erlangfd, "waiting", tokens[1]);
     }
-    
 
+    else if(!strcmp(tokens[0], "GET_NODES")){
+
+        char* nodedata = obtener_string_nodos(&table_nodes.job_table);
+
+        if (send(erlangfd, nodedata, strlen(nodedata), MSG_DONTWAIT) < 0) {
+            perror("[ERROR] erlang_to_C: send GET_NODES response");
+        }
+    }
+    
     else {
         fprintf(stderr, "[WARN] erlang_to_C: unknown command '%s'\n", tokens[0]);
     }

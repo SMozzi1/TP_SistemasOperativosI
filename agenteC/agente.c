@@ -24,6 +24,7 @@
 #include <signal.h>
 
 
+
 /* Inventario de recursos locales disponibles */
 int cpu_available = 4;
 int mem_available = 8192;
@@ -52,8 +53,7 @@ active_jobs table_clients;
 int socket_server;
 int socket_erlang;
 int socket_UDP;
-int epollfd;
-int erlangfd;
+
 
 
 //Logging helpers 
@@ -211,7 +211,7 @@ void *event_loop(void *arg) {
                        inet_ntoa(client_addr.sin_addr), client_fd);
             }
 
-            /* ── C: UDP broadcast timer fired ───────────────────────── */
+            /* ── C: UDP broadcast timer fired. send a message ───────────────────────── */
             else if (fd == args->broadcast_timer_fd) {
                 uint64_t exp;
                 /* Must read the timer fd to clear its readable state;
@@ -300,6 +300,7 @@ void *event_loop(void *arg) {
 
             /* ── G: Send message from a job requesting*/
             if (events[i].events & EPOLLOUT) {
+                //Este fd es el que esta relacionado a un tipo de dato 
                 int fd_listo = events[i].data.fd;
                 
                 // Aquí buscas qué Job y qué Recurso son dueños de este FD
@@ -420,15 +421,8 @@ void setup_epoll(void) {
      * for the timer read itself (check_job_timeouts uses its own mutex internally).
      */
     static worker_args_t args;  /* static so it outlives this stack frame */
-    args.broadcast_timer_fd = make_timer(1, 5);
-    args.timeout_timer_fd   = make_timer(5, 5);
-
-    // we initialize the tables
-    //tabla de trabajos propios
-    JobsTableInit(&table_nodes);
-
-    //Tabla de trabajos de Nodos Remotos
-    JobsTableInit(&table_clients);
+    args.broadcast_timer_fd = make_timer(epollfd, 1, 5);
+    args.timeout_timer_fd   = make_timer(epollfd ,5, 5);
 
     /* Spawn the threads */
     pthread_t threads[NUM_WORKERS];
@@ -450,11 +444,4 @@ void setup_epoll(void) {
     close(socket_erlang);
     close(socket_UDP);
     close(epollfd);
-}
-
-//Place holder funcion que tiene 3 tablas hash 
-int initialize_connections()
-{
-    
-
 }

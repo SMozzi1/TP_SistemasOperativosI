@@ -2,6 +2,7 @@
 
 #include "utils.h"
 #include "../ResourceManager/job_table.h"
+#include "globals.h"
 
 #include <time.h>
 #include <sys/socket.h>
@@ -16,8 +17,21 @@
 #include <pthread.h>
 
 
-#define JOB_TIMEOUT_SEC
+#define JOB_TIMEOUT_SEC 30
 
+#define NODE_TIMEOUT_SEC 15
+
+
+
+/*
+chat me tiro esta idea de como manejar los recursos disponibles y las colas de espera. En vez de tener una estructura global con un mutex para cada recurso, podríamos tener una estructura que contenga la cantidad disponible de cada recurso y un mutex que proteja el acceso a esa estructura. Además, podríamos tener una función que se encargue de procesar las colas de espera cada vez que se libere un recurso, para otorgar los recursos a los trabajos en espera si es posible.
+typedef struct {
+    int cpu;
+    int mem;
+    int gpu;
+    pthread_mutex_t mutex; // Este mutex protege a las 3 variables de arriba
+} resource_pool_t;
+*/
 extern int cpu_available;
 extern int mem_available;
 extern int gpu_available;
@@ -32,7 +46,7 @@ extern fifo_queue_t gpu_queue;
 
 
 //Agrego epollfd asi no 
-static int make_timer(int epollfd,int initial_sec, int interval_sec) {
+static int make_timer(int epollfd, int initial_sec, int interval_sec) {
     int tfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
     if (tfd < 0) fatal_error("timerfd_create failed");
 
@@ -255,3 +269,188 @@ void ask_for_next_resource(int epollfd, int erlangfd, job_entry* job)
     }
 }
 
+
+
+//Si le llega un pedido de recurso, lo encola en la cola correspondiente y luego llama a reserve_elements para intentar asignar recursos a los trabajos en espera
+void enqueue_jobs(const char* resource, int job_id, int amount, int fd_actual) {
+    MakeRequest(job_id, fd_actual, amount);
+
+    if(!strcmp(resource, "cpu")) {
+        EnqueueRequest(&cpu_queue, job_id);
+    } else if (!strcmp(resource, "mem")) {
+        EnqueueRequest(&mem_queue, job_id);
+    } else {
+        EnqueueRequest(&gpu_queue, job_id);
+    }
+
+    reserve_elements();
+}
+
+
+
+//Otorgara tantos recursos tenga disponibles y se encargara de enviar el mensaje de granted a los clientes
+void reserve_elements() {
+    
+    // ─── 1. PROCESAR COLA DE CPU ─────────────────────────────────────
+    while (cpu_queue.first != NULL && cpu_available >= cpu_queue.first->amount_requested) {
+        p_request_t* req = DequeueRequest(&cpu_queue);
+        if (req != NULL) {
+            pthread_mutex_lock(&mutex_resources);
+            cpu_available -= req->amount_requested;
+            pthread_mutex_unlock(&mutex_resources);
+
+            // Al ser ID único, creamos el Job directamente de cero
+            job_entry* nuevo_activo = MakeJob(req->job_id, req->origin_socket, 0); 
+            granted_t* recurso = MakeGranted("cpu", req->amount_requested, "local");
+            
+            AddResource(nuevo_activo, recurso);
+            JobsTableInsert(&table_clients, nuevo_activo);
+            //agregar id
+            send(req->origin_socket, "GRANTED\n", 8, MSG_NOSIGNAL);
+            printf("[SERVER] Job %d: CPU otorgada. Registrado en table_clients.\n", req->job_id);
+
+            DiscardRequest(req); 
+        }
+    }
+
+    // ─── 2. PROCESAR COLA DE MEMORIA ─────────────────────────────────
+    while (mem_queue.first != NULL && mem_available >= mem_queue.first->amount_requested) {
+        p_request_t* req = DequeueRequest(&mem_queue);
+        if (req != NULL) {
+            pthread_mutex_lock(&mutex_resources);
+            mem_available -= req->amount_requested;
+            pthread_mutex_unlock(&mutex_resources);
+
+            job_entry* nuevo_activo = MakeJob(req->job_id, req->origin_socket, 0);
+            granted_t* recurso = MakeGranted("mem", req->amount_requested, "local");
+            
+            AddResource(nuevo_activo, recurso);
+            JobsTableInsert(&table_clients, nuevo_activo);
+
+            send(req->origin_socket, "GRANTED\n", 8, MSG_NOSIGNAL);
+            printf("[SERVER] Job %d: Memoria otorgada. Registrado en table_clients.\n", req->job_id);
+
+            DiscardRequest(req);
+        }
+    }
+
+    // ─── 3. PROCESAR COLA DE GPU ─────────────────────────────────────
+    while (gpu_queue.first != NULL && gpu_available >= gpu_queue.first->amount_requested) {
+        p_request_t* req = DequeueRequest(&gpu_queue);
+        if (req != NULL) {
+
+            pthread_mutex_lock(&mutex_resources);
+            gpu_available -= req->amount_requested;
+            pthread_mutex_unlock(&mutex_resources);
+
+            job_entry* nuevo_activo = MakeJob(req->job_id, req->origin_socket, 0);
+            granted_t* recurso = MakeGranted("gpu", req->amount_requested, "local");
+            
+            AddResource(nuevo_activo, recurso);
+            JobsTableInsert(&table_clients, nuevo_activo);
+
+            send(req->origin_socket, "GRANTED\n", 8, MSG_NOSIGNAL);
+            printf("[SERVER] Job %d: GPU otorgada. Registrado en table_clients.\n", req->job_id);
+
+            DiscardRequest(req);
+        }
+    }
+}
+
+
+char* obtener_string_nodos(job_entry* table[]) {
+    // Estructura auxiliar temporal para agrupar recursos por Nodo único
+    typedef struct {
+        char ip[16];
+        int port;
+        int cpu;
+        int mem;
+        int gpu;
+    } NodeSummary;
+
+    // Array temporal para almacenar hasta 128 nodos remotos únicos distintos
+    NodeSummary unique_nodes[128];
+    int node_count = 0;
+    memset(unique_nodes, 0, sizeof(unique_nodes));
+
+    // ─── 1. RECORRER LA TABLA HASH COMPLETA ───────────────────────────
+    for (int i = 0; i < TABLE_SIZE; i++) {
+        job_entry* current_job = table[i];
+
+        // Recorrer la lista de colisiones por encadenamiento (next_job)
+        while (current_job != NULL) {
+            granted_t* res = current_job->resources;
+
+            // Recorrer la lista enlazada de recursos otorgados a este Job
+            while (res != NULL) {
+                int found_idx = -1;
+
+                // Buscar si ya registramos esta combinación de IP:Puerto
+                for (int j = 0; j < node_count; j++) {
+                    if (unique_nodes[j].port == res->dest_port && 
+                        strcmp(unique_nodes[j].ip, res->dest_ip) == 0) {
+                        found_idx = j;
+                        break;
+                    }
+                }
+
+                // Si no existe, creamos una nueva entrada para este nodo remoto
+                if (found_idx == -1) {
+                    if (node_count < 128) {
+                        strncpy(unique_nodes[node_count].ip, res->dest_ip, sizeof(unique_nodes[node_count].ip) - 1);
+                        unique_nodes[node_count].port = res->dest_port;
+                        found_idx = node_count;
+                        node_count++;
+                    } else {
+                        fprintf(stderr, "[WARN] Se superó el límite de nodos únicos en el buffer temporal.\n");
+                        break;
+                    }
+                }
+
+                // Sumar la cantidad al recurso correspondiente
+                if (strcmp(res->type, "cpu") == 0) {
+                    unique_nodes[found_idx].cpu += res->amount;
+                } else if (strcmp(res->type, "mem") == 0) {
+                    unique_nodes[found_idx].mem += res->amount;
+                } else if (strcmp(res->type, "gpu") == 0) {
+                    unique_nodes[found_idx].gpu += res->amount;
+                }
+
+                res = res->next; // Siguiente recurso del Job
+            }
+            current_job = current_job->next_job; // Siguiente Job en el bucket
+        }
+    }
+
+    // ─── 2. CONSTRUIR EL STRING DINÁMICO ──────────────────────────────
+    // Reservamos un buffer amplio en memoria dinámica (8 KB) para armar la respuesta
+    size_t buffer_size = 8192;
+    char* result = malloc(buffer_size);
+    if (result == NULL) {
+        return NULL;
+    }
+
+    // Inicializamos el string con la cabecera requerida
+    int offset = snprintf(result, buffer_size, "NODES ");
+
+    // Iteramos los nodos consolidados para concatenarlos de forma segura
+    for (int i = 0; i < node_count; i++) {
+        // Agrega el punto y coma separador a partir del segundo nodo impreso
+        if (i > 0 && (size_t)offset < buffer_size) {
+            offset += snprintf(result + offset, buffer_size - offset, ";");
+        }
+
+        // Concatena el formato "IP:PORT:cpu:X:mem:Y:gpu:Z"
+        if ((size_t)offset < buffer_size) {
+            offset += snprintf(result + offset, buffer_size - offset, 
+                               "%s:%d:cpu:%d:mem:%d:gpu:%d",
+                               unique_nodes[i].ip, 
+                               unique_nodes[i].port, 
+                               unique_nodes[i].cpu, 
+                               unique_nodes[i].mem, 
+                               unique_nodes[i].gpu);
+        }
+    }
+
+    return result; 
+}

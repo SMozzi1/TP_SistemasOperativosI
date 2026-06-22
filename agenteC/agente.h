@@ -12,8 +12,11 @@
 #include <pthread.h>
 #include <sys/epoll.h>
 #include <sys/timerfd.h>
+#include <sys/socket.h>
 
 #include "comunicaciones.h"
+#include "globals.h"
+
 
 
 typedef struct {
@@ -27,12 +30,6 @@ typedef struct {
 
 /* Initializes and configures non-blocking TCP and UDP listening sockets */
 static void initialize_listen_sockets(void);
-
-
-static int make_timer(int initial_sec, int interval_sec);
-
-
-static void check_job_timeouts(void);
 
 
 /* Core event loop that waits for and handles network events using epoll */
