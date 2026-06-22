@@ -133,7 +133,6 @@ static void check_job_timeouts(int erlangfd, active_jobs tabla_propia) {
 }
 
 
-
 //Para la liberacion de los recursos
 void update_local_resources(const char *resource_name, int amount) {
     pthread_mutex_lock(&mutex_resources);
@@ -161,7 +160,7 @@ void update_local_resources(const char *resource_name, int amount) {
 }
 
 
-//Deber
+//
 void release_resources(job_entry* job)
 {
     // flag to see if there is a job or any resources at all
@@ -211,7 +210,6 @@ void original_socket(job_entry* job, int fd)
     printf("[DEBUG] Asignado provider_fd = %d al recurso '%s' del Job %d\n", 
             fd, job->next_req->type, job->job_id);
 }
-
 
 
 //Bucle principal para pedir elementos.
@@ -270,7 +268,6 @@ void ask_for_next_resource(int epollfd, int erlangfd, job_entry* job)
 }
 
 
-
 //Si le llega un pedido de recurso, lo encola en la cola correspondiente y luego llama a reserve_elements para intentar asignar recursos a los trabajos en espera
 void enqueue_jobs(const char* resource, int job_id, int amount, int fd_actual) {
     MakeRequest(job_id, fd_actual, amount);
@@ -285,7 +282,6 @@ void enqueue_jobs(const char* resource, int job_id, int amount, int fd_actual) {
 
     reserve_elements();
 }
-
 
 
 //Otorgara tantos recursos tenga disponibles y se encargara de enviar el mensaje de granted a los clientes
@@ -305,8 +301,9 @@ void reserve_elements() {
             
             AddResource(nuevo_activo, recurso);
             JobsTableInsert(&table_clients, nuevo_activo);
-            //agregar id
-            send(req->origin_socket, "GRANTED\n", 8, MSG_NOSIGNAL);
+            //agregar id 
+
+            send(req->origin_socket, strcat("GRANTED ", ), 8, MSG_NOSIGNAL);
             printf("[SERVER] Job %d: CPU otorgada. Registrado en table_clients.\n", req->job_id);
 
             DiscardRequest(req); 
