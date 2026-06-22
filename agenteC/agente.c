@@ -19,8 +19,30 @@
  */
 
 #include "comunicaciones.h"
+#include "agente.h"
+#include "job_table.h"
+
+
+
 #include <signal.h>
 
+
+#define MAX_EVENTS 64        // Maximum number of events epoll will process in a single wake-up
+#define PORT       4200      // TCP Port for both Erlang (localhost) and Remote Nodes (Any IP)
+#define BUFFER_LEN 1024      // Standard buffer size for reading network data
+#define NUM_WORKERS 4        // Number of threads in our Thread Pool
+#define MAX_FDS    1024      // Maximum file descriptors supported by our read_until_newline function
+
+#define BROADCAST_PORT 12529 
+//Need manualy be changed
+#define ANNOUNCEMENT_MSG "ANNOUNCE 4200 cpu:4 mem:8192 gpu:1"
+
+
+int socket_server;
+int socket_erlang;
+int socket_UDP;
+int epollfd;
+int erlangfd;
 
 //Logging helpers 
 
@@ -131,7 +153,7 @@ static void check_job_timeouts(void) {
     time_t now = time(NULL);
 
     /* ── tabla_propia: our jobs waiting for a reply from remote nodes ── */
-    pthread_mutex_lock(&tabla_propia.lock);
+    pthread_mutex_lock(&tabla_propia.mutexTable);
     for (int i = 0; i < HASH_SIZE; i++) {
         job_entry **pp = &tabla_propia.buckets[i];
         while (*pp) {
@@ -155,7 +177,7 @@ static void check_job_timeouts(void) {
             }
         }
     }
-    pthread_mutex_unlock(&tabla_propia.lock);
+    pthread_mutex_unlock(&tabla_propia.mutexTable);
 
     /* ── tabla_clientes: pending reservations from remote nodes ──────── */
     pthread_mutex_lock(&tabla_clientes.lock);
@@ -180,12 +202,6 @@ static void check_job_timeouts(void) {
 
 
     //Event loop (executed by every threads)
-
-
-typedef struct {
-    int broadcast_timer_fd;   /* UDP broadcast timer  (fires every 5 s) */
-    int timeout_timer_fd;     /* Job timeout checker  (fires every 5 s) */
-} worker_args_t;
 
 
 
@@ -340,7 +356,7 @@ void *event_loop(void *arg) {
 
                 if (result == 1) {
                     printf("[ERLANG ->] %s", line);
-                    erlang_to_C(erlangfd, line);
+                    erlang_to_C(erlangfd, line, args->timeout_timer_fd);
                 } else if (result == -1) {
                     log_error("[EVENT F] Erlang disconnected");
                     epoll_ctl(epollfd, EPOLL_CTL_DEL, erlangfd, NULL);
@@ -478,9 +494,7 @@ void setup_epoll(void) {
 }
 
 
+int initialize_connections()
+{
 
-
-int main(void) {
-    setup_epoll();
-    return 0;
 }

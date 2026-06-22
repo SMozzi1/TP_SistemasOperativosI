@@ -17,6 +17,11 @@
 
 
 typedef struct {
+    int broadcast_timer_fd;   /* UDP broadcast timer  (fires every 5 s) */
+    int timeout_timer_fd;     /* Job timeout checker  (fires every 5 s) */
+} worker_args_t;
+
+typedef struct {
     char buffer[BUFFER_LEN];
     int accumulated_bytes;
 } ConnectionState;
@@ -25,15 +30,21 @@ typedef struct {
 /* Function prototypes */
 
 /* Initializes and configures non-blocking TCP and UDP listening sockets */
-void inicializar_sockets_escucha(int *socket_escucha, int *socket_erlang, int *socket_UDP);
+static void initialize_listen_sockets(void);
+
+
+static int make_timer(int initial_sec, int interval_sec);
+
+
+static void check_job_timeouts(void);
+
 
 /* Core event loop that waits for and handles network events using epoll */
-void aceptar_eventos(int epollfd, struct epoll_event events[]);
+void *event_loop(void *arg);
+
 
 /* Creates the epoll instance, registers listening sockets, and starts the event loop */
-void crear_epoll(void);
+void setup_epoll(void);
 
-/* Prints system errors and terminates execution when a critical failure occurs */
-void handler(const char *msg);
 
 #endif /* AGENTE_CORE_H */

@@ -53,16 +53,37 @@ void DestroyJob(job_entry* job){
     free(job);
 }
 
-//adds element to the list of granted resources
+// //adds element to the list of granted resources
+// void AddResource(job_entry* job, granted_t* res){
+//    if(job->resources == NULL){ // empty list
+//        job->resources = res;
+//     }
+//    else{
+//         res->next = job->resources;
+//         job->resources = res;
+//         }
+// }
+
+//Para agregar al final
 void AddResource(job_entry* job, granted_t* res){
-   if(job->resources == NULL){ // empty list
-       job->resources = res;
-    }
-   else{
-        res->next = job->resources;
+
+    res->next = NULL;
+
+    if (job->resources == NULL) { 
         job->resources = res;
+    }
+    else {
+        granted_t* actual = job->resources;
+        while (actual->next != NULL) {
+            actual = actual->next; // Avanzamos hasta el final
         }
+        
+        actual->next = res;
+    }
+
+    job->next_req = job->resources; 
 }
+
 
 
 //active job table constructor 

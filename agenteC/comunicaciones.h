@@ -12,11 +12,15 @@
 #include <unistd.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include "comunicaciones.h"
+#include <comunicaciones.h>
 #include "job_table.h"
 
 
-
+int socket_server;
+int socket_erlang;
+int socket_UDP;
+int epollfd;
+int erlangfd;
 
 
 // Max capacity for the stream reconstruction buffer

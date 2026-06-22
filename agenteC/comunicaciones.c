@@ -7,7 +7,7 @@
  * message parsing, and dispatching to Erlang or remote nodes.
  *
  * Fixes applied over the original draft:
- *  - desglosar_instrucciones: now operates on a local copy so the
+ *  - get_token: now operates on a local copy so the
  *    original buffer is never destroyed. Callers no longer reference
  *    the undeclared variable `mensaje` or the undeclared array `token[]`.
  *  - C_to_erlang: signature corrected to (int, const char*, const char*).
@@ -28,21 +28,13 @@
 
 fd_connection_state connections[MAX_FDS];
 
-int socket_server;
-int socket_erlang;
-int socket_UDP;
-int epollfd;
-int erlangfd;
-
-
-
 
 /*
  * Splits `instruction` into tokens delimited by space, '\n', or '\r'.
  * WARNING: modifies the string in place (uses strtok_r internally).
  * Returns the number of tokens found (at most max_tokens).
  */
-int desglosar_instrucciones(char *instruction, char **token_array, int max_tokens) {
+int get_token(char *instruction, char **token_array, int max_tokens) {
     int i = 0;
     char *saveptr;
 
@@ -120,7 +112,7 @@ int read_until_newline(int fd, char *output_line) {
  * Sends a response to the Erlang scheduler process.
  * instruction: "granted" | "rejected" | "waiting" | "timeout"
  */
-void C_to_erlang(int fd, const char *instruction, const char *job_id) {
+void C_to_erlang(int erlangfd, const char *instruction, const char *job_id) {
     char msg[LENG];
     int  n;
 
@@ -134,14 +126,14 @@ void C_to_erlang(int fd, const char *instruction, const char *job_id) {
         return;
     }
 
-    if (send(fd, msg, n, MSG_DONTWAIT) < 0) {
+    if (send(erlangfd, msg, n, MSG_DONTWAIT) < 0) {
         perror("[ERROR] C_to_erlang: send");
     }
 }
 
-/* ═══════════════════════════════════════════════════════════════════
+/* 
  *  Incoming message from a remote node -> respond or update tables
- * ═══════════════════════════════════════════════════════════════════ */
+ */
 
 /*
  * Processes an incoming TCP message from another remote C agent.
@@ -153,17 +145,17 @@ void C_to_erlang(int fd, const char *instruction, const char *job_id) {
  *   DENIED  <job_id>
  *
  * fd            -> FD of the remote node that sent the message
- * erlangfd_local -> FD of the local Erlang connection (for JOB_GRANTED/DENIED)
+ * erlangfd -> FD of the local Erlang connection (for JOB_GRANTED/DENIED)
  * instruction   -> the already-read line (will be modified by strtok_r)
  */
-void client_to_myserver(int erlangfd_local, int fd, char *instruction) {
+void client_to_myserver(int erlangfd, int fd_actual, char *instruction) {
     /* Work on a copy to avoid destroying the original buffer */
     char copy[BUFFER_LEN];
     strncpy(copy, instruction, sizeof(copy) - 1);
     copy[sizeof(copy) - 1] = '\0';
 
     char *tokens[10];
-    int   num = desglosar_instrucciones(copy, tokens, 10);
+    int   num = get_token(copy, tokens, 10);
     if (num < 1) return;
 
     /* ── RESERVE: a remote node is requesting a local resource ──────── */
@@ -178,31 +170,11 @@ void client_to_myserver(int erlangfd_local, int fd, char *instruction) {
         int   amount     = atoi(tokens[3]);
         int   job_id     = atoi(job_id_str);
 
-        /*
-         * TODO (resource management teammate):
-         *   int ok = try_reserve(resource, amount);
-         * Placeholder for now: always returns 0 (denied).
-         */
-        int ok = 0; /* placeholder */
 
-        if (ok) {
-            /* Register in tabla_clientes so we can release on disconnection */
-            job_entry *job = FindJob(&tabla_clientes, job_id);
-            if (job == NULL) {
-                job = MakeJob(job_id, fd, time(NULL));
-                strncpy(job->resource_req, resource, sizeof(job->resource_req) - 1);
-                job->amount_req = amount;
-                JobsTableInsert(&tabla_clientes, job);
-            }
-            granted_t *res = MakeGranted(resource, amount);
-            if (res) AddResource(job, res);
-        }
+        //Crear trabajo, encolarlo, 
+        //Pensar logica, encolarlo para procesarlo
 
-        /* Send immediate reply to the remote node */
-        char resp[LENG];
-        int  n = snprintf(resp, sizeof(resp),
-                          ok ? "GRANTED %s\n" : "DENIED %s\n", job_id_str);
-        send(fd, resp, n, MSG_DONTWAIT);
+       
     }
 
     /* ── RELEASE: the remote node is freeing a resource we granted it ── */
@@ -211,66 +183,108 @@ void client_to_myserver(int erlangfd_local, int fd, char *instruction) {
 
         int job_id = atoi(tokens[1]);
 
+    
         /*
-         * TODO (resource management teammate):
-         *   release_resource(resource, amount);
-         */
+         //funcion que dado el job sume a las variables globales de mem, cpu, gpu los valores 
+        */
 
-        job_entry *job = FindJob(&tabla_clientes, job_id);
-        if (job != NULL) {
-            RemoveJob(&tabla_clientes, job_id);
-        }
+        //Desencolar el job al que le di los datos
     }
+
 
     /* ── GRANTED / DENIED: response to a RESERVE we sent ─────────────── */
-    else if (!strcmp(tokens[0], "GRANTED") || !strcmp(tokens[0], "DENIED")) {
-        if (num < 2) return;
-
-        char *job_id_str = tokens[1];
-        int   job_id     = atoi(job_id_str);
-
-        job_entry *job = FindJob(&tabla_propia, job_id);
+    else if (!strcmp(tokens[0], "GRANTED")) {
+        int job_id = atoi(token[1]);
+        job_entry* job = FindJob(&tabla_propia, job_id);
         if (job != NULL) {
-            const char *result = !strcmp(tokens[0], "GRANTED") ? "granted" : "rejected";
-            C_to_erlang(erlangfd_local, result, job_id_str);
-
-            /*
-             * This outgoing fd has served its purpose.
-             * Remove it from epoll and close it.
-             * (We have access to the global epollfd here.)
-             */
-            epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL);
-            close(fd);
-            clear_connection_buffer(fd);
-            RemoveJob(&tabla_propia, job_id);
+            
+            de_donde_vino(job, fd_actual);
+        // ¡AVANZAMOS EN LA LISTA ENLAZADA!
+            job->next_req = job->next_to_request->next;
+        // Pedimos el que sigue de forma totalmente asíncrona
+            pedir_siguiente_recurso(epollfd, job);
         }
     }
+    else
+    {
+        int job_id = atoi(tokens[1]);
+        job_entry* job = FindJob(&tabla_propia, job_id);
+        if (job != NULL) {
+            close(fd_actual);
 
-    else {
-        fprintf(stderr, "[WARN] client_to_myserver: unknown command '%s'\n", tokens[0]);
+        soltar_elementos(job);
     }
 }
 
+void de_donde_vino(job_entry* job, int fd)
+{
+    // Verificación de seguridad: si no hay un recurso pendiente, no hacemos nada
+    if (job == NULL || job->next_req == NULL) {
+        return;
+    }
 
+    // El recurso que se estaba tramitando (next_req) es el que recibe el FD 
+    // del nodo que acaba de responder con éxito.
+    job->next_req->provider_fd = fd;
+
+    printf("[DEBUG] Asignado provider_fd = %d al recurso '%s' del Job %d\n", 
+            fd, job->next_req->type, job->job_id);
+}
+
+void soltar_elementos(job_entry* job)
+{
+    // Verificación de seguridad: si el job o la lista de recursos están vacíos, no hay nada que soltar
+    if (job == NULL || job->resources == NULL) {
+        return;
+    }
+    // Inicializamos 'actual' apuntando al primer elemento de la lista (la cabeza)
+    granted_t* actual = job->resources;
+
+    // Recorremos la lista desde el principio hasta llegar al final (NULL) 
+    // o hasta toparnos con el que falló (job->next_req)
+    while (actual != NULL && actual != job->next_req) {
+        
+        // Verificamos si realmente tenemos un FD válido guardado para este recurso
+        if (actual->provider_fd >= 0) {
+            char msg[256];
+            snprintf(msg, sizeof(msg), "RELEASE %d %s %d\n", job->job_id, actual->type, actual->amount);
+            
+            // Mandamos el mensaje directamente al nodo dueño de ese recurso específico
+            send(actual->provider_fd, msg, strlen(msg), MSG_NOSIGNAL);
+            
+            printf("[INFO] Enviado RELEASE del recurso %s al FD %d para el Job %d\n", 
+                    actual->type, actual->provider_fd, job->job_id);
+            
+            // ¡CRUCIAL! Cerramos la conexión con ese nodo ya que liberamos el recurso
+            close(actual->provider_fd);
+            
+            // Marcamos el FD como inválido para evitar usarlo por error en el futuro
+            actual->provider_fd = -1;
+        }
+        
+        // Avanzamos al siguiente recurso de la lista enlazada
+        actual = actual->next;
+    }
+}
 
 /*
  * Opens a non-blocking TCP connection to a remote node, registers it
  * in epoll, and sends the given instruction (RESERVE or RELEASE).
  *
- * erlangfd_local -> used to forward errors to Erlang if the job is missing
+ * erlangfd -> used to forward errors to Erlang if the job is missing
  * epollfd_local  -> shared epoll instance
  * instruction    -> "reserve <job_id>" or "release <job_id>"
  *
  * The destination IP, port, resource name, and amount are read from the
  * job_entry that must have been inserted into tabla_propia by erlang_to_C().
  */
-void myserver_to_client(int erlangfd_local __attribute__((unused)), int epollfd_local, char *instruction) {
+void myserver_to_client(int erlangfd __attribute__((unused)), int epollfd_local, char *instruction) {
     char copy[BUFFER_LEN];
     strncpy(copy, instruction, sizeof(copy) - 1);
     copy[sizeof(copy) - 1] = '\0';
 
     char *tokens[10];
-    int   num = desglosar_instrucciones(copy, tokens, 10);
+    int   num = get_token(copy, tokens, 10);
 
     if (num < 2) {
         fprintf(stderr, "[ERROR] myserver_to_client: missing arguments in '%s'\n", instruction);
@@ -280,12 +294,12 @@ void myserver_to_client(int erlangfd_local __attribute__((unused)), int epollfd_
     const char *command    = tokens[0];
     int         job_id_int = atoi(tokens[1]);
 
-    //TODO
-    // job_entry *job = FindJob(&tabla_propia, job_id_int);
-    // if (job == NULL) {
-    //     fprintf(stderr, "[ERROR] myserver_to_client: job %d not found in tabla_propia\n", job_id_int);
-    //     return;
-    // }
+    //
+    job_entry *job = FindJob(&tabla_propia, job_id_int);
+    if (job == NULL) {
+        fprintf(stderr, "[ERROR] myserver_to_client: job %d not found in tabla_propia\n", job_id_int);
+        return;
+    }
 
     /* 1. Create a non-blocking TCP socket */
     int remote_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
@@ -329,6 +343,7 @@ void myserver_to_client(int erlangfd_local __attribute__((unused)), int epollfd_
     int  plen = 0;
 
     if (strcasecmp(command, "reserve") == 0) {
+        for
         plen = snprintf(payload, sizeof(payload),
                         "RESERVE %d %s %d\n",
                         job->job_id, job->resource_req, job->amount_req);
@@ -353,9 +368,6 @@ void myserver_to_client(int erlangfd_local __attribute__((unused)), int epollfd_
     }
 }
 
-/* ═══════════════════════════════════════════════════════════════════
- *  Erlang -> C  (local command from the scheduler)
- * ═══════════════════════════════════════════════════════════════════ */
 
 /*
  * Processes a command received from the Erlang scheduler (§4.2):
@@ -364,13 +376,13 @@ void myserver_to_client(int erlangfd_local __attribute__((unused)), int epollfd_
  *   JOB_RELEASE <job_id>
  *   JOB_STATUS  <job_id>   (responds WAITING for now)
  */
-void erlang_to_C(int erlangfd_local, char *instruction) {
+void erlang_to_C(int erlangfd, char *instruction, int timerfd) {
     char copy[BUFFER_LEN];
     strncpy(copy, instruction, sizeof(copy) - 1);
     copy[sizeof(copy) - 1] = '\0';
 
     char *tokens[32];
-    int   num = desglosar_instrucciones(copy, tokens, 32);
+    int   num = get_token(copy, tokens, 32);
     if (num < 1) return;
 
     /* ── JOB_REQUEST ─────────────────────────────────────────────── */
@@ -383,61 +395,50 @@ void erlang_to_C(int erlangfd_local, char *instruction) {
         char *job_id_str = tokens[1];
         int   job_id     = atoi(job_id_str);
 
-        /*
-         * Parse destination tokens: @host:resource:amount
-         * Example: @192.168.1.2:cpu:2 @192.168.1.3:gpu:1
-         *
-         * For each destination we create a job_entry in tabla_propia
-         * and fire an async RESERVE.
-         *
-         * Current simplification: only the first destination is processed.
-         * Handling multiple destinations (waiting for all GRANTEDs before
-         * replying to Erlang) requires a state machine or Erlang-side logic.
-         */
         if (num < 3) {
             /* No remote destinations: resource must be local; delegate to resource manager */
             fprintf(stderr, "[WARN] JOB_REQUEST has no remote destinations for job %s\n", job_id_str);
-            C_to_erlang(erlangfd_local, "rejected", job_id_str);
+            C_to_erlang(erlangfd, "rejected", job_id_str);
             return;
         }
+        job_entry* newjob = MakeJob(job_id, erlangfd, timerfd);
 
-        /* Parse the first destination: @ip:resource:amount */
-        char dest_copy[256];
-        strncpy(dest_copy, tokens[2], sizeof(dest_copy) - 1);
-        dest_copy[sizeof(dest_copy) - 1] = '\0';
-
-        char *p = dest_copy;
-        if (*p == '@') p++;   /* skip the leading '@' */
-
-        /* Split ip : resource : amount */
-        char *dest_ip  = strtok(p,    ":");
-        char *dest_res = strtok(NULL, ":");
-        char *dest_amt = strtok(NULL, ":");
-
-        if (!dest_ip || !dest_res || !dest_amt) {
-            fprintf(stderr, "[WARN] Invalid destination format: %s\n", tokens[2]);
-            C_to_erlang(erlangfd_local, "rejected", job_id_str);
-            return;
+        // 2. Un solo bucle para extraer todos los recursos
+        for (int i = 2; i < num; i++) {
+            char dest_copy[256];
+            strncpy(dest_copy, tokens[i], sizeof(dest_copy) - 1); // <-- Usar tokens[i], no tokens[2]
+            dest_copy[sizeof(dest_copy) - 1] = '\0';
+            
+            char *p = dest_copy;
+            if (*p == '@') p++; 
+            
+            char *dest_ip  = strtok(p,    ":");
+            char *dest_res = strtok(NULL, ":");
+            char *dest_amt = strtok(NULL, " ");
+            
+            if (!dest_ip || !dest_res || !dest_amt) {
+                fprintf(stderr, "[WARN] Formato inválido: %s\n", tokens[i]);
+                // Lógica de rechazo...
+                continue; // Mejor saltar este recurso o abortar todo
+            }
+            
+            int amount = atoi(dest_amt);
+            
+            // ERROR CORREGIDO: Estabas pasando 'dest_amt' dos veces. 
+            // Ahora pasas el recurso ("cpu") y la cantidad (2).
+            granted_t* element = MakeGranted(dest_res, amount);
+            
+            // OJO: Si la IP varía por recurso, deberías guardar dest_ip y el puerto 
+            // DENTRO del 'element' (granted_t), no en el job global.
+            
+            AddResource(newjob, element);
         }
 
-        /* Insert job into tabla_propia before opening the outgoing connection */
-        job_entry *job = MakeJob(job_id, erlangfd_local, time(NULL));
-        if (!job) { C_to_erlang(erlangfd_local, "rejected", job_id_str); return; }
+        JobsTableInsert(&tabla_propia, newjob); // O 'ownjobs' si es global
 
-        strncpy(job->dest_ip,      dest_ip,  sizeof(job->dest_ip)      - 1);
-        job->dest_port = PORT;   /* All agents listen on the same PORT */
-        strncpy(job->resource_req, dest_res, sizeof(job->resource_req) - 1);
-        job->amount_req = atoi(dest_amt);
+        // ERROR CORREGIDO: La firma real de tu función es de 3 argumentos
+        pedir_elementos(epollfd, erlangfd, newjob);
 
-        JobsTableInsert(&tabla_propia, job);
-
-        /* Fire the outgoing connection and send RESERVE */
-        char reserve_cmd[128];
-        snprintf(reserve_cmd, sizeof(reserve_cmd), "reserve %d", job_id);
-        myserver_to_client(erlangfd_local, epollfd, reserve_cmd);
-
-        /* The GRANTED/DENIED reply arrives asynchronously in
-         * client_to_myserver(), which then calls C_to_erlang(). */
     }
 
     /* ── JOB_RELEASE ─────────────────────────────────────────────── */
@@ -445,17 +446,18 @@ void erlang_to_C(int erlangfd_local, char *instruction) {
         if (num < 2) return;
 
         int job_id = atoi(tokens[1]);
-        char release_cmd[128];
-        snprintf(release_cmd, sizeof(release_cmd), "release %d", job_id);
-        myserver_to_client(erlangfd_local, epollfd, release_cmd);
+        job_entry* job = FindJob(&tabla_propia, job_id);
+        soltar_elementos(job);
 
         RemoveJob(&tabla_propia, job_id);
     }
 
     /* ── JOB_STATUS ──────────────────────────────────────────────── */
+
+    //Si no tiro time out es porque no se tiene elementos 
     else if (!strcmp(tokens[0], "JOB_STATUS")) {
         if (num < 2) return;
-        C_to_erlang(erlangfd_local, "waiting", tokens[1]);
+        C_to_erlang(erlangfd, "waiting", tokens[1]);
     }
     
 
@@ -463,3 +465,60 @@ void erlang_to_C(int erlangfd_local, char *instruction) {
         fprintf(stderr, "[WARN] erlang_to_C: unknown command '%s'\n", tokens[0]);
     }
 }
+
+
+// Corregimos la firma de la función aportando los tipos de datos correctos
+//ver erlangfd
+void pedir_elementos(int epollfd, int erlangfd, job_entry* job)
+{
+    // CASO BASE: Si ya no hay más recursos en la lista, terminamos con éxito
+    if (job->next_req == NULL)
+    {
+        job->next_req = NULL;
+        char id_str[16];
+        snprintf(id_str, sizeof(id_str), "%d", job->job_id);
+        C_to_erlang(erlangfd, "granted", id_str);
+        return;
+
+    }
+    else
+    {
+        //creamos un socket para mandar mensajes 
+        int remote_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+        if (remote_fd < 0) {
+            perror("[ERROR] pedir_elementos: socket()");
+            return;
+        }
+        
+        struct sockaddr_in remote_addr;
+        memset(&remote_addr, 0, sizeof(remote_addr));
+        remote_addr.sin_family = AF_INET;
+        remote_addr.sin_port   = htons(job->dest_port);
+        inet_pton(AF_INET, job->dest_ip, &remote_addr.sin_addr);
+        
+        int conn_res = connect(remote_fd, (struct sockaddr *)&remote_addr, sizeof(remote_addr));
+        if (conn_res < 0 && errno != EINPROGRESS) {
+            perror("[ERROR] pedir_elementos: connect()");
+            close(remote_fd);
+            return;
+        }
+        
+        // Registramos en epoll. 
+        // EPOLLOUT se disparará en cuanto la conexión TCP se complete con éxito.
+        struct epoll_event ev;
+        ev.events  = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLONESHOT;
+        ev.data.fd = remote_fd;
+        if (epoll_ctl(epollfd, EPOLL_CTL_ADD, remote_fd, &ev) < 0) {
+            perror("[ERROR] epoll_ctl ADD");
+            close(remote_fd);
+            return;
+        }
+        
+        // NOTA: El 'send' NO va aquí. Debe ir en tu bucle epoll cuando detectes EPOLLOUT.
+        // Para lograrlo, debes asociar este 'remote_fd' con el 'job' y el 'recurso_actual'
+        // en una estructura de contexto o tabla intermedia de conexiones activas.
+    }
+}
+    
+    
+    
