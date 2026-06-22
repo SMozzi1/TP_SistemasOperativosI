@@ -19,7 +19,7 @@ OBJS = $(SRCS:.c=.o)
 
 # ─── CONFIGURACIÓN ERLANG ─────────────────────────────────────────
 ERLC = erlc
-ERL_SRCS = scheduler.erl scheduler_utils.erl
+ERL_SRCS = Scheduler_Erlang/scheduler.erl Scheduler_Erlang/scheduler_utils.erl
 BEAM_FILES = $(ERL_SRCS:.erl=.beam)
 
 # ─── REGLAS DE COMPILACIÓN ────────────────────────────────────────
