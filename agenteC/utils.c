@@ -1,4 +1,5 @@
 
+
 #include "utils.h"
 #include "job_table.h"
 #include <sys/socket.h>
@@ -223,3 +224,4 @@ void ask_for_next_resource(int epollfd, int erlangfd, job_entry* job)
         // en una estructura de contexto o tabla intermedia de conexiones activas.
     }
 }
+

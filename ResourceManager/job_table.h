@@ -7,7 +7,10 @@
 typedef struct granted_t {
     char type[8];//gpu, mem, cpu
     int amount;   //reserved amount
-    int providerfd; //fd que dio el recurso, (para hacer realese)
+
+    int provider_fd; //fd que dio el recurso, (para hacer realese)
+    char dest_ip[16]; 
+    int dest_port;
     struct granted_t* next; //linked list of resources granted
 } granted_t;
 
@@ -16,7 +19,7 @@ typedef struct job_entry {
     int origin_socket;
     time_t timestamp; //checkear bien de que tipo son.
     granted_t* resources;
-    granted_t* next_req; //Apunta al proximo recurso a verificar
+    granted_t* next_req; //Apunta al proximo recurso a verificar, puntero que se va a mover dentro del codigo
     struct job_entry* next_job; //colisiones por encadenamiento.
 
 } job_entry; 

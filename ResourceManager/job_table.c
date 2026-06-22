@@ -10,12 +10,17 @@
 #define TABLE_SIZE 256
 
 //granted constructor
-granted_t* MakeGranted(char* type, int amount){
+granted_t* MakeGranted(char* type, int amount, int dest_ip){
     granted_t* new = malloc(sizeof(struct granted_t));
     assert(new);
     strncpy(new->type,type, sizeof(new->type) - 1);
     new->type[sizeof(new->type) - 1] = '\0'; 
     new->amount = amount;
+
+    int providerfd; //fd que dio el recurso, (para hacer realese)
+    char dest_ip[16]; 
+    int dest_port;
+
     new->next = NULL;
     
     return new;

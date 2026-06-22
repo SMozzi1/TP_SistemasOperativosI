@@ -21,10 +21,6 @@ typedef struct {
     int timeout_timer_fd;     /* Job timeout checker  (fires every 5 s) */
 } worker_args_t;
 
-typedef struct {
-    char buffer[BUFFER_LEN];
-    int accumulated_bytes;
-} ConnectionState;
 
 
 /* Function prototypes */
