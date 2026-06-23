@@ -237,25 +237,33 @@ void client_to_myserver(int fd_actual, char *instruction) {
     }
     /* ── GRANTED / DENIED: response to a RESERVE we sent ─────────────── */
     else if (!strcmp(tokens[0], "GRANTED")) {
+        if (num < 2) return;
         int job_id = atoi(tokens[1]);
         job_entry* job = FindJob(&table_ourjobs, job_id);
-        if (job != NULL) {         
+        if (job != NULL && job->next_req != NULL) {
             original_socket(job, fd_actual);
-        // ¡AVANZAMOS EN LA LISTA ENLAZADA!
             job->next_req = job->next_req->next;
-        // Pedimos el que sigue de forma totalmente asíncrona
             ask_for_next_resource(job);
         }
     }
     else
-    {
-        int job_id = atoi(tokens[1]);
-        job_entry* job = FindJob(&table_ourjobs, job_id);
-        if (job != NULL) {
-            close(fd_actual);
+{
+    if (num < 2) {
+        fprintf(stderr, "[WARN] Mensaje desconocido o malformado: %s\n", instruction);
+        return;
+    }
+    int job_id = atoi(tokens[1]);
+    job_entry* job = FindJob(&table_ourjobs, job_id);
+    if (job != NULL) {
+        close(fd_actual);
         release_resources(job);
+
+        char id_str[16];
+        snprintf(id_str, sizeof(id_str), "%d", job_id);
+        C_to_erlang("rejected", id_str);
+        RemoveJob(&table_ourjobs, job_id);
     }
-    }
+}
 }
 
 
@@ -379,9 +387,23 @@ void erlang_to_C(char *instruction, time_t timer) {
 
     //Si no tiro time out es porque no se tiene elementos 
     else if (!strcmp(tokens[0], "JOB_STATUS")) {
-        if (num < 2) return;
+    if (num < 2) return;
+
+    int job_id = atoi(tokens[1]);
+    job_entry* job = FindJob(&table_ourjobs, job_id);
+
+    if (job == NULL) {
+        // Ya no existe: se completó, se rechazó, o expiró.
+        // No tenemos un estado "unknown" en el protocolo, así que avisamos timeout
+        // (peor caso: que Erlang reintente el job, no que crea que sigue vivo).
+        C_to_erlang("timeout", tokens[1]);
+    } else if (job->next_req == NULL) {
+        // Ya tiene TODOS los recursos otorgados, solo falta que Erlang lo sepa
+        C_to_erlang("granted", tokens[1]);
+    } else {
         C_to_erlang("waiting", tokens[1]);
     }
+}
 
 
     /* ── GET_NODES ────────────────────────────────────────────────── */

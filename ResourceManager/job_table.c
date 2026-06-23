@@ -309,3 +309,14 @@ job_entry* BuscarJobPorFD(int fd) {
     }
     return NULL; // No se encontró ningún job con el fd dado
 }
+
+job_entry* FindJobBySocket(active_jobs* table, int job_id, int origin_socket){
+    pthread_mutex_lock(&table->mutexTable);
+    int idx = HashF(job_id);
+    job_entry* look = table->job_table[idx];
+    while (look != NULL && !(look->job_id == job_id && look->origin_socket == origin_socket)) {
+        look = look->next_job;
+    }
+    pthread_mutex_unlock(&table->mutexTable);
+    return look;
+}

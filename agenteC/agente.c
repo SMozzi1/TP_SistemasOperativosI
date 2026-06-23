@@ -387,6 +387,7 @@ static void* event_loop(void *arg) {
                 } else if (result == -1) {
                     fprintf(stderr, "[EVENT G] Remote node fd=%d disconnected\n", fd);
                     release_client_by_fd(fd);          // libera lo que tuviera reservado por este fd
+                    handle_outbound_disconnect(fd);    // por si nos llamabamos nosotros mismos
                     epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL);
                     close(fd);
                     clear_connection_buffer(fd);

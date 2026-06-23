@@ -28,7 +28,7 @@ typedef struct job_entry {
     granted_t* resources;
     granted_t* next_req; //Puntero aux que se mueve de acuerdo a los pedidos de los otros 
     struct job_entry* next_job; //colisiones por encadenamiento.
-    
+
 
 } job_entry; 
 
@@ -62,7 +62,7 @@ void JobsTableInsert(active_jobs* table, job_entry* job);
 job_entry* FindJob(active_jobs* table, int job_id);
 void RemoveJob(active_jobs* table, int job_id);
 void PrintTable(active_jobs* table);
-
+job_entry* FindJobBySocket(active_jobs* table, int job_id, int origin_socket);
 
 /* ---------------- FIFO Queues for Pending Resource Requests ----------*/
 
