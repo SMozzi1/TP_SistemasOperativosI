@@ -498,3 +498,44 @@ void release_client_by_fd(int fd) {
 
     if (found_any) reserve_elements();
 }
+
+
+// Si la conexión que se cayó era nuestra (un next_req propio esperando
+// GRANTED/DENIED de un proveedor que se desconectó sin contestar),
+// rechazamos el job inmediatamente en vez de esperar los 30s del timeout.
+void handle_outbound_disconnect(int fd) {
+    pthread_mutex_lock(&table_ourjobs.mutexTable);
+
+    job_entry* job = NULL;
+    job_entry* prev = NULL;
+    int idx = -1;
+    for (int i = 0; i < TABLE_SIZE && job == NULL; i++) {
+        job_entry* cur = table_ourjobs.job_table[i];
+        job_entry* p = NULL;
+        while (cur != NULL) {
+            if (cur->origin_socket == fd) { job = cur; prev = p; idx = i; break; }
+            p = cur; cur = cur->next_job;
+        }
+    }
+
+    if (job == NULL) {
+        pthread_mutex_unlock(&table_ourjobs.mutexTable);
+        return;
+    }
+
+    fprintf(stderr, "[WARN] Job %d: proveedor remoto se desconectó sin responder. Rechazado.\n",
+            job->job_id);
+
+    if (prev == NULL) table_ourjobs.job_table[idx] = job->next_job;
+    else               prev->next_job = job->next_job;
+    table_ourjobs.active_count--;
+
+    pthread_mutex_unlock(&table_ourjobs.mutexTable);
+
+    char id_str[16];
+    snprintf(id_str, sizeof(id_str), "%d", job->job_id);
+
+    release_resources(job);   // libera lo que ya tuviera otorgado de OTROS proveedores
+    C_to_erlang("rejected", id_str);
+    DestroyJob(job);
+}
