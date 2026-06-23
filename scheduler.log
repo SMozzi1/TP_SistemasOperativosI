@@ -608,3 +608,45 @@
 
 [{{2026,6,23},{7,5,12}}] JOB "all_jobs_cancelled" connection_closed
 
+[{{2026,6,23},{9,22,57}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,23},{9,22,57}}] JOB 1001 denied
+
+[{{2026,6,23},{9,22,58}}] JOB 1002 denied
+
+[{{2026,6,23},{9,23,0}}] JOB 1003 denied
+
+[{{2026,6,23},{9,23,1}}] JOB 1004 denied
+
+[{{2026,6,23},{9,23,3}}] JOB 1005 denied
+
+[{{2026,6,23},{9,23,6}}] JOB 1006 denied
+
+[{{2026,6,23},{9,23,8}}] JOB 1007 granted
+
+[{{2026,6,23},{9,23,9}}] JOB 1008 denied
+
+[{{2026,6,23},{9,23,12}}] JOB 1010 denied
+
+[{{2026,6,23},{9,23,13}}] JOB 1011 denied
+
+[{{2026,6,23},{9,23,15}}] JOB "all_jobs_cancelled" connection_closed
+
+[{{2026,6,23},{9,29,31}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,23},{9,29,31}}] JOB 1001 granted
+
+[{{2026,6,23},{9,29,32}}] JOB 1002 granted
+
+[{{2026,6,23},{9,29,35}}] JOB 1004 granted
+
+[{{2026,6,23},{9,29,36}}] JOB 1003 granted
+
+[{{2026,6,23},{9,29,37}}] JOB 1005 granted
+
+[{{2026,6,23},{9,29,40}}] JOB 1006 granted
+
+[{{2026,6,23},{9,29,41}}] JOB 1008 granted
+
+[{{2026,6,23},{9,29,49}}] JOB "all_jobs_cancelled" connection_closed
+
