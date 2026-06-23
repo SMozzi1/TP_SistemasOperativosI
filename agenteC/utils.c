@@ -10,26 +10,6 @@
 
 
 
-/*
-chat me tiro esta idea de como manejar los recursos disponibles y las colas de espera. En vez de tener una estructura global con un mutex para cada recurso, podríamos tener una estructura que contenga la cantidad disponible de cada recurso y un mutex que proteja el acceso a esa estructura. Además, podríamos tener una función que se encargue de procesar las colas de espera cada vez que se libere un recurso, para otorgar los recursos a los trabajos en espera si es posible.
-typedef struct {
-    int cpu;
-    int mem;
-    int gpu;
-    pthread_mutex_t mutex; // Este mutex protege a las 3 variables de arriba
-} resource_pool_t;
-*/
-// extern int cpu_available;
-// extern int mem_available;
-// extern int gpu_available;
-// extern pthread_mutex_t mutex_resources;
-
-// extern active_jobs table_nodes;
-// extern active_jobs table_clients;
-
-// extern fifo_queue_t cpu_queue;
-// extern fifo_queue_t mem_queue;
-// extern fifo_queue_t gpu_queue;
 
 
 
@@ -82,8 +62,8 @@ void check_job_timeouts(active_jobs* tabla, int timeout_sec) {
 
                 if (tabla == &table_ourjobs) {
                     if (j->next_req == NULL) {
-                        // Ya estaba completo, esperando un JOB_RELEASE de Erlang.
-                        // No es timeout real, no lo tocamos.
+                        // It was complete, waiting for a JOB_RELEASE from Erlang.
+                        // No real timeout -> we dont touch it
                         pp = &(*pp)->next_job;
                         continue;
                     }
@@ -91,9 +71,8 @@ void check_job_timeouts(active_jobs* tabla, int timeout_sec) {
                     char id_str[16];
                     snprintf(id_str, sizeof(id_str), "%d", j->job_id);
                     C_to_erlang("timeout", id_str);
-
-                    // 1) Liberar (avisando al proveedor) SOLO lo que ya estaba otorgado
-                    //    (todo lo que está antes de next_req).
+                    // 1) Frees (notifying the supplier) ONLY what was given
+                    //    (everything before next_req).
                     granted_t *res = j->resources;
                     while (res != NULL && res != j->next_req) {
                         granted_t *next_res = res->next;
@@ -107,27 +86,26 @@ void check_job_timeouts(active_jobs* tabla, int timeout_sec) {
                         free(res);
                         res = next_res;
                     }
-
-                    // 2) Lo que nunca llegó a otorgarse: NO tiene provider_fd válido
-                    //    todavía (es basura sin inicializar), solo liberamos memoria.
+                    // 2) What was never given: DOESNT have a valid provider_fd yet
+                    //   (trash without being initialized), we only free the memory.
                     while (res != NULL) {
                         granted_t *next_res = res->next;
                         free(res);
                         res = next_res;
                     }
 
-                    // 3) Cerrar la conexión saliente "en vuelo" (la que está esperando
-                    //    el GRANTED/DENIED del próximo recurso pedido). Si el job nunca
-                    //    llegó a pedir nada, origin_socket sigue siendo erlangfd: no tocar.
+                    // 3) Close the leaving connection "on fly" (the one waiting GRANTED/DENIED
+                    //    from the next asked resource). If the job never asked anything,
+                    //    origin_socket keeps being erlangfd: do not touch.
                     if (j->origin_socket >= 0 && j->origin_socket != erlangfd) {
                         epoll_ctl(epollfd, EPOLL_CTL_DEL, j->origin_socket, NULL);
                         close(j->origin_socket);
                     }
 
                 } else if (tabla == &table_nodes) {
-                    // El nodo dejó de anunciarse: solo lo sacamos de la tabla.
-                    // OJO: estos recursos son los que ÉL anunció, NO son nuestros.
-                    // Nunca deben sumarse a cpu_available/mem_available/gpu_available.
+                    // The node stop announcing itself: we only remove it from the table.
+                    // BEWARE: this resources are the ones announced by HIM, NOT OURS.
+                    // Never should be added to cpu_available/mem_available/gpu_available.
                     DestroyGrantedList(j->resources);
                 }
 
@@ -146,8 +124,9 @@ void check_job_timeouts(active_jobs* tabla, int timeout_sec) {
 }
 
 
-//Para la liberacion de los recursos
-//repensado por la estructura de granted_t
+
+//Used for the freedom of the resources
+//and reused on the granted_t struct.
 void update_local_resources(job_entry* job) {
 
     pthread_mutex_lock(&mutex_resources);
@@ -205,7 +184,7 @@ void release_resources(job_entry* job)
 }
 
 
-//Asignacion de donde vino la memoria, de que fd viene el recurso 
+//Asignation of where it came the memory, from which fd came the resource.
 
 void original_socket(job_entry* job, int fd)
 {
@@ -221,66 +200,10 @@ void original_socket(job_entry* job, int fd)
 }
 
 
-//Bucle principal para pedir elementos.
-//Va pidiendo en orden y solo da granted si lo tiene a todos
-//MOVIDO A COMUNICACIONES.c
-// void ask_for_next_resource(job_entry* job)
-// {
-//     // CASO BASE: Si ya no hay más recursos en la lista, terminamos con éxito
-//     if (job->next_req == NULL)
-//     {
-//         job->next_req = NULL;
-//         char id_str[16];
-//         snprintf(id_str, sizeof(id_str), "%d", job->job_id);
-//         C_to_erlang( "granted", id_str);
-//         return;
-
-//     }
-//     else
-//     {
-//         //creamos un socket para mandar mensajes 
-//         int remote_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
-
-//         if (remote_fd < 0) {
-//             perror("[ERROR] pedir_elementos: socket()");
-//             return;
-//         }
-//         job->origin_socket = remote_fd;
-//         //Cada recurso tendra un id de donde viene, el puerto se tiene que buscar de la tabla,
-//         //Si no esta entonces tengo que hacer job_rejected
-//         struct sockaddr_in remote_addr;
-//         memset(&remote_addr, 0, sizeof(remote_addr));
-//         remote_addr.sin_family = AF_INET;
-//         remote_addr.sin_port   = htons(job->next_req->dest_port);
-//         inet_pton(AF_INET, job->next_req->dest_ip, &remote_addr.sin_addr);
-        
-//         int conn_res = connect(remote_fd, (struct sockaddr *)&remote_addr, sizeof(remote_addr));
-//         if (conn_res < 0 && errno != EINPROGRESS) {
-//             perror("[ERROR] pedir_elementos: connect()");
-//             close(remote_fd);
-//             return;
-//         }
-        
-//         // Registramos en epoll. 
-//         // EPOLLOUT se disparará en cuanto la conexión TCP se complete con éxito.
-//         struct epoll_event ev;
-//         ev.events  = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLONESHOT;
-//         ev.data.fd = remote_fd;
-//         if (epoll_ctl(epollfd, EPOLL_CTL_ADD, remote_fd, &ev) < 0) {
-//             perror("[ERROR] epoll_ctl ADD");
-//             close(remote_fd);
-//             return;
-//         }
-        
-//         //Se crea un socket con EPOLLOUT que reaccionara cuando la conexion este lista para mandar el mensaje de reserve
-//         //el send esta en la funcion event_loop, cuando se pueda mandar el mensaje de reserve, se manda y se cambia el epoll a EPOLLIN para esperar la respuesta del nodo remoto
-//     }
-// }
 
 
-//Echa con la estructura de Ro
-//Si le llega un pedido de recurso, lo encola en la cola correspondiente y luego llama a reserve_elements para intentar asignar recursos a los trabajos en espera
-
+// If a resource order arrived, it queues it into the corresponding queue, 
+// later it calls reserve_elements to try to assign resourecs to the works on wait.
 void enqueue_jobs(const char* resource, int job_id, int amount, int fd_actual) {
     p_request_t* rq = MakeRequest(job_id, fd_actual, amount);
 
@@ -295,17 +218,17 @@ void enqueue_jobs(const char* resource, int job_id, int amount, int fd_actual) {
     reserve_elements();
 }
 
-/* Drena una cola: otorga tantos pedidos de la cabeza como permita *avail.
- *
- * Concurrencia:
- *  - El chequeo (*avail >= head->amount) y las dos mutaciones (dequeue y
- *    *avail -=) ocurren con AMBOS locks tomados a la vez ⇒ la decisión es
- *    atómica. Eso es lo que la versión anterior hacía mal.
- *  - Orden de locks: mutex_resources -> mutexQueue. Nada en el código los
- *    toma al revés, así que no hay deadlock.
- *  - El trabajo lento (insert en tabla + send) va DESPUÉS de soltar ambos
- *    locks: nunca sostenemos mutex_resources mientras tomamos
- *    table_clients.mutexTable (ver la nota de abajo, esto importa).
+/*   Drains a queue: gives as much resources from the head as *avail lets.
+
+ * Concurrency:
+* - The check (*avail >= head->amount) and the two mutations (dequeue and
+* avail -=) occur with BOTH locks held simultaneously ⇒ the decision is 
+* atomic. This is what the previous version did wrong.
+* - Lock order: mutex_resources -> mutexQueue. Nothing in the code takes them
+* in reverse, so there's no deadlock.
+* - The slow work (insert into table + send) happens AFTER both
+* locks are released: we never hold mutex_resources while holding
+* table_clients.mutexTable (see the note below, this matters).
  */
 void drain_queue(p_queue_t* q, int* avail, const char* type) {
     p_request_t* ready = NULL;   /* stash, encadenado por next_req */
@@ -321,7 +244,7 @@ void drain_queue(p_queue_t* q, int* avail, const char* type) {
     pthread_mutex_unlock(&q->mutexQueue);
     pthread_mutex_unlock(&mutex_resources);
 
-    /* ---- fuera de los locks ---- */
+    /* ---- outside the locks  ---- */
     while (ready != NULL) {
         p_request_t* req = ready;
         ready = ready->next_req;
@@ -347,8 +270,7 @@ void drain_queue(p_queue_t* q, int* avail, const char* type) {
     }
 }
 
-//Echa con la estructura de Ro
-//Otorgara tantos recursos tenga disponibles y se encargara de enviar el mensaje de granted a los clientes
+//Gives as many resources as available and it sends the granted message to the clients
 void reserve_elements(void) {
     drain_queue(&cpu_queue, &cpu_available, "cpu");
     drain_queue(&mem_queue, &mem_available, "mem");
@@ -357,7 +279,7 @@ void reserve_elements(void) {
 
 
 char* obtener_string_nodos(job_entry* table[]) {
-    // Estructura auxiliar temporal para agrupar recursos por Nodo único
+    // Auxiliar temporal struct to group resources for a single Node.
     typedef struct {
         char ip[16];
         int port;
@@ -366,24 +288,24 @@ char* obtener_string_nodos(job_entry* table[]) {
         int gpu;
     } NodeSummary;
 
-    // Array temporal para almacenar hasta 128 nodos remotos únicos distintos
+    // Temporal array to storage up to 128 unique remote nodes.
     NodeSummary unique_nodes[128];
     int node_count = 0;
     memset(unique_nodes, 0, sizeof(unique_nodes));
 
-    // ─── 1. RECORRER LA TABLA HASH COMPLETA ───────────────────────────
+    // ─── 1. VISITS THE WHOLE HASH TABLE ───────────────────────────
     for (int i = 0; i < TABLE_SIZE; i++) {
         job_entry* current_job = table[i];
 
-        // Recorrer la lista de colisiones por encadenamiento (next_job)
+        // Visits the collisions list for chaining (next_job)
         while (current_job != NULL) {
             granted_t* res = current_job->resources;
 
-            // Recorrer la lista enlazada de recursos otorgados a este Job
+            // Visits the linked lists of resources granted to that Job
             while (res != NULL) {
                 int found_idx = -1;
 
-                // Buscar si ya registramos esta combinación de IP:Puerto
+                // Searchs to know if the IP:PORT combination is already registered
                 for (int j = 0; j < node_count; j++) {
                     if (unique_nodes[j].port == res->dest_port && 
                         strcmp(unique_nodes[j].ip, res->dest_ip) == 0) {
@@ -392,7 +314,7 @@ char* obtener_string_nodos(job_entry* table[]) {
                     }
                 }
 
-                // Si no existe, creamos una nueva entrada para este nodo remoto
+=                // If it doesnt exist, we create a new entry for this remote node.
                 if (found_idx == -1) {
                     if (node_count < 128) {
                         strncpy(unique_nodes[node_count].ip, res->dest_ip, sizeof(unique_nodes[node_count].ip) - 1);
@@ -405,7 +327,7 @@ char* obtener_string_nodos(job_entry* table[]) {
                     }
                 }
 
-                // Sumar la cantidad al recurso correspondiente
+                // Add the quantity to the corresponding resource
                 if (strcmp(res->type, "cpu") == 0) {
                     unique_nodes[found_idx].cpu += res->amount;
                 } else if (strcmp(res->type, "mem") == 0) {
@@ -414,31 +336,31 @@ char* obtener_string_nodos(job_entry* table[]) {
                     unique_nodes[found_idx].gpu += res->amount;
                 }
 
-                res = res->next; // Siguiente recurso del Job
+                res = res->next; // Next resource of the job
             }
-            current_job = current_job->next_job; // Siguiente Job en el bucket
+            current_job = current_job->next_job; // Next job on the bucket
         }
     }
 
-    // ─── 2. CONSTRUIR EL STRING DINÁMICO ──────────────────────────────
-    // Reservamos un buffer amplio en memoria dinámica (8 KB) para armar la respuesta
+    // ─── 2. BUILD THE DYNAMIC STRING ──────────────────────────────
+    // We reserve a wide buffer on dynamic memory (8 KB) to make the answer.
     size_t buffer_size = 8192;
     char* result = malloc(buffer_size);
     if (result == NULL) {
         return NULL;
     }
 
-    // Inicializamos el string con la cabecera requerida
+    // Initialize the string with the required head
     int offset = snprintf(result, buffer_size, "NODES ");
 
-    // Iteramos los nodos consolidados para concatenarlos de forma segura
+    // Iterate the consolited nodes to concatened them on a safe way
     for (int i = 0; i < node_count; i++) {
         // Agrega el punto y coma separador a partir del segundo nodo impreso
         if (i > 0 && (size_t)offset < buffer_size) {
             offset += snprintf(result + offset, buffer_size - offset, ";");
         }
 
-        // Concatena el formato "IP:PORT:cpu:X:mem:Y:gpu:Z"
+        // Concatenate the "IP:PORT:cpu:X:mem:Y:gpu:Z" format.
         if ((size_t)offset < buffer_size) {
             offset += snprintf(result + offset, buffer_size - offset, 
                                "%s:%d:cpu:%d:mem:%d:gpu:%d",
@@ -460,9 +382,9 @@ char* obtener_string_nodos(job_entry* table[]) {
 void log_error(const char *msg)   { perror(msg); }
 void fatal_error(const char *msg) { perror(msg); exit(EXIT_FAILURE); }
 
-// Devuelve al pool local el/los recurso(s) reservados en la conexión `fd`,
-// quita la entrada de table_clients y reintenta servir las colas.
-// Idempotente: si en `fd` no hay nada reservado, no hace nada.
+// Returns to the local pool the resource(s) reservated on the 'fd' conecction.
+// Removes the entry of table_clients and retry to serve the queues.
+// Idempotent: if in 'fd' theres nothing else reserved, it does nothing.
 
 void release_client_by_fd(int fd) {
     pthread_mutex_lock(&table_clients.mutexTable);
@@ -487,7 +409,7 @@ void release_client_by_fd(int fd) {
                 *pp = job->next_job;
                 table_clients.active_count--;
                 DestroyJob(job);
-                // no avanzamos pp: el siguiente ya quedó en *pp
+                // Dond advance on pp: next is already on *pp
             } else {
                 pp = &(*pp)->next_job;
             }
@@ -500,9 +422,10 @@ void release_client_by_fd(int fd) {
 }
 
 
-// Si la conexión que se cayó era nuestra (un next_req propio esperando
-// GRANTED/DENIED de un proveedor que se desconectó sin contestar),
-// rechazamos el job inmediatamente en vez de esperar los 30s del timeout.
+
+// If the connection that falied was ours (a own next_req waiting for
+// GRANTED/DENIED of a supplier that disconnected without an answer),
+// we deny the job immediately instead of waiting the 30 sec of the timeout.
 void handle_outbound_disconnect(int fd) {
     pthread_mutex_lock(&table_ourjobs.mutexTable);
 
@@ -535,7 +458,7 @@ void handle_outbound_disconnect(int fd) {
     char id_str[16];
     snprintf(id_str, sizeof(id_str), "%d", job->job_id);
 
-    release_resources(job);   // libera lo que ya tuviera otorgado de OTROS proveedores
+    release_resources(job);   // frees what would be given of OTHER suppliers
     C_to_erlang("rejected", id_str);
     DestroyJob(job);
 }
