@@ -8,6 +8,8 @@
 #include "../ResourceManager/job_table.h"
 
 //MAX_FDS debe ser igual o mayor al número máximo de file descriptors que tu proceso puede tener abiertos simultáneamente
+//MAX_FDS must be equal or greater to the max number of file descriptors that your process
+//possibly haves open simultaneously.
 #define MAX_FDS 1024
 
 
@@ -15,15 +17,15 @@
 // Max capacity for the stream reconstruction buffer
 #define BUFFER_MAX 2048
 
-//Es el buffer acumulador por socket. Lo necesitás porque TCP no garantiza que un 
-//mensaje llegue completo en un solo recv()
+//Socket-acummulator buffer. Needed because TCP doesnt guarantee that a message
+//will be delivered completely with only one recv().
 typedef struct text_buffer{
     char buffer[512];
     int accumulated_bytes;
 } ConnectionState;
 
 
-/*Funciones para parsear y recibir mensajes de otros*/
+// Functions to parse and receive messages from others.
 int get_token(char *instruction, char **token_array, int max_tokens);   
 void clear_connection_buffer(int fd);
 /*
@@ -40,7 +42,7 @@ void ask_for_next_resource(job_entry* job);
 
 
 
-/*Funciones para comunicarnos con los fd y con erlang*/
+// Functions to communicate with the fds and Erlang.
 void client_to_myserver(int fd_actual, char *instruction);
 
 
