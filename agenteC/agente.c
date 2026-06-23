@@ -208,7 +208,11 @@ static void* event_loop(void *arg) {
                 if (read(fd, &exp, sizeof(exp)) < 0) {
                     log_error("read broadcast timer");
                 }
-
+                char msg[126];
+                pthread_mutex_lock(&mutex_resources);
+                snprintf(msg, sizeof(msg), "ANNOUNCE %d cpu:%d mem:%d gpu:%d\n",
+                PORT, cpu_available, mem_available, gpu_available);
+                pthread_mutex_unlock(&mutex_resources);
                 /*
                  * Format: ANNOUNCE <port> <resources>  (image 2)
                  * The sender IP is NOT in the payload; it is extracted
@@ -220,12 +224,12 @@ static void* event_loop(void *arg) {
                 bcast_addr.sin_port        = htons(BROADCAST_PORT);
                 bcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
 
-                ssize_t sent = sendto(socket_UDP, ANNOUNCEMENT_MSG,
-                                      strlen(ANNOUNCEMENT_MSG), 0,
+                ssize_t sent = sendto(socket_UDP, msg,
+                                      strlen(msg), 0,
                                       (struct sockaddr *)&bcast_addr,
                                       sizeof(bcast_addr));
                 if (sent < 0) log_error("[UDP BCAST] sendto failed");
-                else printf("[UDP BCAST] Announcement sent: %s\n", ANNOUNCEMENT_MSG);
+                else printf("[UDP BCAST] Announcement sent: %s\n", msg);
             }
 
             /* ── D: job timeout timer fired ─────────────────────────── */
@@ -235,7 +239,7 @@ static void* event_loop(void *arg) {
                     log_error("read timeout timer");
                 }
                 check_job_timeouts(&table_nodes, NODE_TIMEOUT_SEC);
-                check_job_timeouts(&table_clients, JOB_TIMEOUT_SEC);
+                check_job_timeouts(&table_ourjobs, JOB_TIMEOUT_SEC);
             }
 
             /* ── E: incoming UDP datagram from another node ─────────── */
@@ -248,6 +252,7 @@ static void* event_loop(void *arg) {
                                     (struct sockaddr *)&sender, &slen);
                 if (bytes <= 0) continue;
 
+                buf[bytes] = '\0'; // to end when copying
                 char copy[LENG];
                 strncpy(copy, buf, sizeof(copy) - 1);
                 copy[sizeof(copy) - 1] = '\0';
@@ -255,31 +260,31 @@ static void* event_loop(void *arg) {
                 char *tokens[10];
                 int num = get_token(copy, tokens, 10);
                 if (num < 2) continue; // Al menos necesitamos ANNOUNCE y el Puerto
-
+                
                 // CORRECCIÓN 1: 'inet_ntop' es 100% seguro entre hilos
                 char sender_ip[INET_ADDRSTRLEN];
                 inet_ntop(AF_INET, &(sender.sin_addr), sender_ip, sizeof(sender_ip));
 
                 int nodo_puerto = atoi(tokens[1]);
                 
-                // Usamos el puerto como ID temporal para el nodo, o define tu propia lógica de ID
-                int nodo_id = nodo_puerto; 
+                // ¡LA MAGIA!: Convertimos la IP string a int y la forzamos a positivo
+                int nodo_id = abs((int)inet_addr(sender_ip)); 
 
-                // CORRECCIÓN 3: Evitar duplicados. Buscamos si el nodo ya existía
+                // Buscamos si el nodo ya existía usando su IP hasheada
                 job_entry* nodo = FindJob(&table_nodes, nodo_id);
-                
-                if (nodo != NULL) {
-                    // Si ya existía, liberamos la lista de recursos viejos para no perder memoria
+                int is_new = (nodo == NULL);
+
+                if (!is_new) {
+                    nodo->timestamp = time(NULL);
                     granted_t* current_res = nodo->resources;
                     while (current_res != NULL) {
-                        granted_t* next_res = current_res->next;
+                            granted_t* next_res = current_res->next;
                         free(current_res);
                         current_res = next_res;
                     }
-                    nodo->resources = NULL; // Limpiamos la cabecera
+                    nodo->resources = NULL;
                 } else {
-                    // Si es un nodo nuevo, lo creamos de cero
-                    nodo = MakeJob(nodo_id, nodo_puerto, args->broadcast_timer_fd);
+                    nodo = MakeJob(nodo_id, nodo_puerto, time(NULL));
                 }
 
                 // Puntero para usar con strtok_r
@@ -316,8 +321,8 @@ static void* event_loop(void *arg) {
 
                 // Solo lo insertamos en la tabla si es un nodo que no existía previamente
                 // (Si ya existía, modificamos directamente sus recursos sobre el puntero que nos dio FindJob)
-                if (FindJob(&table_nodes, nodo_id) == NULL) {
-                    JobsTableInsert(&table_nodes, nodo); 
+                if (is_new) {
+                    JobsTableInsert(&table_nodes, nodo);
                 }
                 
             }
@@ -329,7 +334,7 @@ static void* event_loop(void *arg) {
 
                 if (result == 1) {
                     printf("[ERLANG ->] %s", line);
-                    erlang_to_C(line, args->timeout_timer_fd);
+                    erlang_to_C(line, time(NULL));
                 } else if (result == -1) {
                     log_error("[EVENT F] Erlang disconnected");
                     epoll_ctl(epollfd, EPOLL_CTL_DEL, erlangfd, NULL);
@@ -381,16 +386,11 @@ static void* event_loop(void *arg) {
 
                 } else if (result == -1) {
                     fprintf(stderr, "[EVENT G] Remote node fd=%d disconnected\n", fd);
-
-                    /*
-                     * Release all resources this node held (table_clients).
-                     * TODO (resource management teammate): iterate jobs for this
-                     * fd and call release_resource() for each one.
-                     */
+                    release_client_by_fd(fd);          // libera lo que tuviera reservado por este fd
                     epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL);
                     close(fd);
                     clear_connection_buffer(fd);
-                    continue; /* Do not rearm: the socket is dead */
+                    continue;
                 }
 
                 /*
@@ -438,13 +438,13 @@ void setup_epoll(void) {
      * This prevents the "thundering herd" problem without a global lock. */
     struct epoll_event ev_s, ev_e, ev_u;
 
-    ev_s.events  = EPOLLIN | EPOLLEXCLUSIVE;
+    ev_s.events  = EPOLLIN;
     ev_s.data.fd = socket_server;
 
-    ev_e.events  = EPOLLIN | EPOLLEXCLUSIVE | EPOLLONESHOT; 
+    ev_e.events  = EPOLLIN;
     ev_e.data.fd = socket_erlang;
 
-    ev_u.events  = EPOLLIN;   /* UDP does not need EPOLLEXCLUSIVE */
+    ev_u.events  = EPOLLIN;   
     ev_u.data.fd = socket_UDP;
 
     if (epoll_ctl(epollfd, EPOLL_CTL_ADD, socket_server, &ev_s) < 0 ||

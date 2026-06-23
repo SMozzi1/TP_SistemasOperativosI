@@ -83,6 +83,16 @@ void check_job_timeouts(active_jobs* tabla, int timeout_sec) {
             // Evaluamos si el trabajo superó el timeout recibido por parámetro
             if (difftime(now, j->timestamp) >= timeout_sec) {
                 fprintf(stderr, "[TIMEOUT] Job %d expired.\n", j->job_id);
+                
+                if (tabla == &table_ourjobs) {
+                    if (j->next_req == NULL){
+                        pp = &(*pp)->next_job;
+                        continue; // salto al while
+                    }
+                        char id_str[16];
+                        snprintf(id_str, sizeof(id_str), "%d", j->job_id);
+                        C_to_erlang("timeout", id_str);
+                    }
 
                 // ─── 1. LIBERACIÓN DE RECURSOS (granted_t) ─────────────────
                 // Si esta tabla es 'table_clients', debemos devolver los recursos
@@ -115,6 +125,7 @@ void check_job_timeouts(active_jobs* tabla, int timeout_sec) {
                 // Decrementamos el contador de trabajos activos de la estructura
                 tabla->active_count--;
 
+                j->resources = NULL; // already freed in the while loop
                 // ─── 3. DESTRUIR EL JOB ────────────────────────────────────
                 DestroyJob(j); 
                 
@@ -265,6 +276,7 @@ void original_socket(job_entry* job, int fd)
 
 //Echa con la estructura de Ro
 //Si le llega un pedido de recurso, lo encola en la cola correspondiente y luego llama a reserve_elements para intentar asignar recursos a los trabajos en espera
+
 void enqueue_jobs(const char* resource, int job_id, int amount, int fd_actual) {
     p_request_t* rq = MakeRequest(job_id, fd_actual, amount);
 
@@ -279,89 +291,61 @@ void enqueue_jobs(const char* resource, int job_id, int amount, int fd_actual) {
     reserve_elements();
 }
 
+/* Drena una cola: otorga tantos pedidos de la cabeza como permita *avail.
+ *
+ * Concurrencia:
+ *  - El chequeo (*avail >= head->amount) y las dos mutaciones (dequeue y
+ *    *avail -=) ocurren con AMBOS locks tomados a la vez ⇒ la decisión es
+ *    atómica. Eso es lo que la versión anterior hacía mal.
+ *  - Orden de locks: mutex_resources -> mutexQueue. Nada en el código los
+ *    toma al revés, así que no hay deadlock.
+ *  - El trabajo lento (insert en tabla + send) va DESPUÉS de soltar ambos
+ *    locks: nunca sostenemos mutex_resources mientras tomamos
+ *    table_clients.mutexTable (ver la nota de abajo, esto importa).
+ */
+void drain_queue(p_queue_t* q, int* avail, const char* type) {
+    p_request_t* ready = NULL;   /* stash, encadenado por next_req */
+
+    pthread_mutex_lock(&mutex_resources);
+    pthread_mutex_lock(&q->mutexQueue);
+    while (q->first != NULL && *avail >= q->first->amount_requested) {
+        p_request_t* req = DequeueRequest_locked(q);
+        *avail -= req->amount_requested;
+        req->next_req = ready;
+        ready = req;
+    }
+    pthread_mutex_unlock(&q->mutexQueue);
+    pthread_mutex_unlock(&mutex_resources);
+
+    /* ---- fuera de los locks ---- */
+    while (ready != NULL) {
+        p_request_t* req = ready;
+        ready = ready->next_req;
+        job_entry* je = FindJob(&table_clients, req->job_id);
+        if(je == NULL){
+         je = MakeJob(req->job_id, req->origin_socket, time(NULL));
+        JobsTableInsert(&table_clients, je);
+        }
+        granted_t* g  = MakeGranted((char*)type, req->amount_requested, "local");
+        AddResource(je, g);
+        
+
+        char msg[64];
+        int n = snprintf(msg, sizeof(msg), "GRANTED %d\n", req->job_id);
+        send(req->origin_socket, msg, n, MSG_NOSIGNAL);
+
+        printf("[SERVER] Job %d: %s otorgada. Registrado en table_clients.\n",
+               req->job_id, type);
+        DestroyRequest(req);
+    }
+}
 
 //Echa con la estructura de Ro
 //Otorgara tantos recursos tenga disponibles y se encargara de enviar el mensaje de granted a los clientes
-void reserve_elements() {   
-    // Buffer para armar el mensaje dinámicamente "GRANTED <id>\n"
-    char msg[64]; 
-    
-    // ─── 1. PROCESAR COLA DE CPU ─────────────────────────────────────
-    
-    while (cpu_queue.first != NULL && cpu_available >= cpu_queue.first->amount_requested) {
-        p_request_t* req = DequeueRequest(&cpu_queue);
-        if (req != NULL) {
-            pthread_mutex_lock(&mutex_resources);
-            cpu_available -= req->amount_requested;
-            pthread_mutex_unlock(&mutex_resources);
-
-            // Al ser ID único, creamos el Job directamente de cero
-            job_entry* nuevo_activo = MakeJob(req->job_id, req->origin_socket, 0); 
-            granted_t* recurso = MakeGranted("cpu", req->amount_requested, "local");
-            
-            AddResource(nuevo_activo, recurso);
-            JobsTableInsert(&table_clients, nuevo_activo);
-            
-            // CAMBIO: Formateamos el string incluyendo el ID y el salto de línea
-            snprintf(msg, sizeof(msg), "GRANTED %d\n", req->job_id);
-            // Enviamos el tamaño exacto del string formateado
-            send(req->origin_socket, msg, strlen(msg), MSG_NOSIGNAL);
-            
-            printf("[SERVER] Job %d: CPU otorgada. Registrado en table_clients.\n", req->job_id);
-
-            DestroyRequest(req); 
-        }
-    }
-
-    // ─── 2. PROCESAR COLA DE MEMORIA ─────────────────────────────────
-    while (mem_queue.first != NULL && mem_available >= mem_queue.first->amount_requested) {
-        p_request_t* req = DequeueRequest(&mem_queue);
-        if (req != NULL) {
-            pthread_mutex_lock(&mutex_resources);
-            mem_available -= req->amount_requested;
-            pthread_mutex_unlock(&mutex_resources);
-
-            job_entry* nuevo_activo = MakeJob(req->job_id, req->origin_socket, 0);
-            char* ip = nuevo_activo->resources->dest_ip; // Asignamos la IP del recurso otorgado
-            granted_t* recurso = MakeGranted("mem", req->amount_requested, ip);
-            
-            AddResource(nuevo_activo, recurso);
-            JobsTableInsert(&table_clients, nuevo_activo);
-
-            // CAMBIO: Formateamos el string incluyendo el ID para Memoria
-            snprintf(msg, sizeof(msg), "GRANTED %d\n", req->job_id);
-            send(req->origin_socket, msg, strlen(msg), MSG_NOSIGNAL);
-
-            printf("[SERVER] Job %d: Memoria otorgada. Registrado en table_clients.\n", req->job_id);
-
-            DestroyRequest(req);
-        }
-    }
-
-    // ─── 3. PROCESAR COLA DE GPU ─────────────────────────────────────
-    while (gpu_queue.first != NULL && gpu_available >= gpu_queue.first->amount_requested) {
-        p_request_t* req = DequeueRequest(&gpu_queue);
-        if (req != NULL) {
-
-            pthread_mutex_lock(&mutex_resources);
-            gpu_available -= req->amount_requested;
-            pthread_mutex_unlock(&mutex_resources);
-
-            job_entry* nuevo_activo = MakeJob(req->job_id, req->origin_socket, 0);
-            granted_t* recurso = MakeGranted("gpu", req->amount_requested, "local");
-            
-            AddResource(nuevo_activo, recurso);
-            JobsTableInsert(&table_clients, nuevo_activo);
-
-            // CAMBIO: Formateamos el string incluyendo el ID para GPU
-            snprintf(msg, sizeof(msg), "GRANTED %d\n", req->job_id);
-            send(req->origin_socket, msg, strlen(msg), MSG_NOSIGNAL);
-
-            printf("[SERVER] Job %d: GPU otorgada. Registrado en table_clients.\n", req->job_id);
-
-            DestroyRequest(req);
-        }
-    }
+void reserve_elements(void) {
+    drain_queue(&cpu_queue, &cpu_available, "cpu");
+    drain_queue(&mem_queue, &mem_available, "mem");
+    drain_queue(&gpu_queue, &gpu_available, "gpu");
 }
 
 
@@ -459,8 +443,56 @@ char* obtener_string_nodos(job_entry* table[]) {
         }
     }
 
+    if ((size_t)offset < buffer_size - 1) { // to let the erlang process know when to stop listening
+        snprintf(result + offset, buffer_size - offset, "\n");
+    }
+
     return result; 
 }
 
 void log_error(const char *msg)   { perror(msg); }
 void fatal_error(const char *msg) { perror(msg); exit(EXIT_FAILURE); }
+
+// Devuelve al pool local el/los recurso(s) reservados en la conexión `fd`,
+// quita la entrada de table_clients y reintenta servir las colas.
+// Idempotente: si en `fd` no hay nada reservado, no hace nada.
+void release_client_by_fd(int fd) {
+    pthread_mutex_lock(&table_clients.mutexTable);
+
+    job_entry* job = NULL;
+    job_entry* prev = NULL;
+    int idx = -1;
+    for (int i = 0; i < TABLE_SIZE && job == NULL; i++) {
+        job_entry* cur = table_clients.job_table[i];
+        job_entry* p   = NULL;
+        while (cur != NULL) {
+            if (cur->origin_socket == fd) { job = cur; prev = p; idx = i; break; }
+            p = cur; cur = cur->next_job;
+        }
+    }
+
+    if (job == NULL) {
+        pthread_mutex_unlock(&table_clients.mutexTable);
+        return;
+    }
+
+    // Devolver al pool. Mismo orden de locks que check_job_timeouts: tabla -> recursos
+    pthread_mutex_lock(&mutex_resources);
+    for (granted_t* r = job->resources; r != NULL; r = r->next) {
+        if      (!strcmp(r->type, "cpu")) cpu_available += r->amount;
+        else if (!strcmp(r->type, "mem")) mem_available += r->amount;
+        else if (!strcmp(r->type, "gpu")) gpu_available += r->amount;
+    }
+    pthread_mutex_unlock(&mutex_resources);
+
+    // Desenganchar y destruir
+    if (prev == NULL) table_clients.job_table[idx] = job->next_job;
+    else              prev->next_job = job->next_job;
+    table_clients.active_count--;
+    DestroyJob(job);
+
+    pthread_mutex_unlock(&table_clients.mutexTable);
+
+    // Ahora que creció el pool, intentar atender lo encolado
+    reserve_elements();
+}

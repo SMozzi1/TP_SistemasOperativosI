@@ -138,3 +138,12 @@ void PrintQueue(p_queue_t* resource_queue){
 
 
 
+/* asume que el caller ya tiene q->mutexQueue tomado */
+p_request_t* DequeueRequest_locked(p_queue_t* q) {
+    p_request_t* r = q->first;
+    if (r == NULL) return NULL;
+    q->first = r->next_req;
+    if (q->first == NULL) q->last = NULL;
+    r->next_req = NULL;
+    return r;
+}

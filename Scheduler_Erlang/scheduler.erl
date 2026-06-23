@@ -11,7 +11,7 @@
 -export([job/3]).
 
 %% TIme it takes the generator to create the next job.
--define(GENERATOR_LOOP_TIME, 15000). % 15 sec between jobs generated.
+-define(GENERATOR_LOOP_TIME, 1500). % 15 sec between jobs generated.
 
 %% Time at max of a job for relaunching itself
 -define(JOB_TIMEOUT_MAX_RELAUNCH, 20).

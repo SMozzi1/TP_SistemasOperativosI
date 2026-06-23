@@ -8,13 +8,14 @@
 #include <pthread.h>
 
 #define TABLE_SIZE 256
+#define IP_LEN 16
 
 typedef struct granted_t {
     char type[8];//gpu, mem, cpu
     int amount;   //reserved amount
 
     int provider_fd; //fd que dio el recurso, (para hacer realese)
-    char* dest_ip;  //ip de donde quiero buscar el recurso
+    char dest_ip[IP_LEN];  //ip de donde quiero buscar el recurso
     int dest_port; //Puerto de asociado a esa ip
     struct granted_t* next; //linked list of resources granted
 } granted_t;
@@ -27,6 +28,7 @@ typedef struct job_entry {
     granted_t* resources;
     granted_t* next_req; //Puntero aux que se mueve de acuerdo a los pedidos de los otros 
     struct job_entry* next_job; //colisiones por encadenamiento.
+    
 
 } job_entry; 
 

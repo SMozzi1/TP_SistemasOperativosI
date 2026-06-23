@@ -52,5 +52,6 @@ void PrintQueue(p_queue_t* resource_queue);
 
 void DiscardRequest(p_queue_t* resource_queue);
 
+p_request_t* DequeueRequest_locked(p_queue_t* q);
 #endif /*_RESOURCE_MANAGER_H_*/
 

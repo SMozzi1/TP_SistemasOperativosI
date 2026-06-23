@@ -1,0 +1,248 @@
+[{{2026,6,23},{1,37,27}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,23},{1,37,28}}] JOB "all_jobs_cancelled" connection_closed
+
+[{{2026,6,23},{1,49,47}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,23},{1,57,21}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,23},{1,57,37}}] JOB "all_jobs_cancelled" connection_closed
+
+[{{2026,6,23},{2,1,1}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,23},{2,17,28}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,23},{2,17,32}}] JOB "all_jobs_cancelled" connection_closed
+
+[{{2026,6,23},{2,39,5}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,23},{2,39,36}}] JOB "all_jobs_cancelled" connection_closed
+
+[{{2026,6,23},{2,47,48}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,23},{2,48,14}}] JOB "all_jobs_cancelled" connection_closed
+
+[{{2026,6,23},{2,49,35}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,23},{2,51,32}}] JOB "all_jobs_cancelled" connection_closed
+
+[{{2026,6,23},{2,59,3}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,23},{2,59,3}}] JOB "all_jobs_cancelled" connection_closed
+
+[{{2026,6,23},{3,14,44}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,23},{3,14,44}}] JOB 1001 granted
+
+[{{2026,6,23},{3,15,1}}] JOB "all_jobs_cancelled" connection_closed
+
+[{{2026,6,23},{3,38,18}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,23},{3,38,18}}] JOB 1001 granted
+
+[{{2026,6,23},{3,38,33}}] JOB 1002 granted
+
+[{{2026,6,23},{3,39,24}}] JOB 1003 timeout
+
+[{{2026,6,23},{3,39,37}}] JOB 1003 granted
+
+[{{2026,6,23},{3,39,37}}] JOB 1004 granted
+
+[{{2026,6,23},{3,39,56}}] JOB 1004 timeout
+
+[{{2026,6,23},{3,59,49}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,23},{3,59,49}}] JOB 1001 granted
+
+[{{2026,6,23},{4,0,6}}] JOB 1002 granted
+
+[{{2026,6,23},{4,0,26}}] JOB 1003 granted
+
+[{{2026,6,23},{4,0,41}}] JOB "all_jobs_cancelled" connection_closed
+
+[{{2026,6,23},{4,27,12}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,23},{4,27,12}}] JOB 1001 granted
+
+[{{2026,6,23},{4,27,29}}] JOB 1002 granted
+
+[{{2026,6,23},{4,27,35}}] JOB "all_jobs_cancelled" connection_closed
+
+[{{2026,6,23},{4,34,43}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,23},{4,34,43}}] JOB 1001 granted
+
+[{{2026,6,23},{4,34,58}}] JOB 1002 granted
+
+[{{2026,6,23},{4,35,13}}] JOB 1003 granted
+
+[{{2026,6,23},{4,35,30}}] JOB 1004 granted
+
+[{{2026,6,23},{4,35,44}}] JOB 1005 granted
+
+[{{2026,6,23},{4,36,1}}] JOB 1006 granted
+
+[{{2026,6,23},{4,36,16}}] JOB 1007 granted
+
+[{{2026,6,23},{4,36,33}}] JOB 1008 granted
+
+[{{2026,6,23},{4,36,48}}] JOB 1009 granted
+
+[{{2026,6,23},{4,37,2}}] JOB "all_jobs_cancelled" connection_closed
+
+[{{2026,6,23},{5,10,5}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,23},{5,12,19}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,23},{5,12,19}}] JOB 1001 granted
+
+[{{2026,6,23},{5,12,36}}] JOB 1002 granted
+
+[{{2026,6,23},{5,12,51}}] JOB 1003 granted
+
+[{{2026,6,23},{5,13,8}}] JOB 1004 granted
+
+[{{2026,6,23},{5,14,57}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,23},{5,14,57}}] JOB 1001 granted
+
+[{{2026,6,23},{5,15,2}}] JOB 1004 granted
+
+[{{2026,6,23},{5,15,3}}] JOB 1005 granted
+
+[{{2026,6,23},{5,15,15}}] JOB 1006 granted
+
+[{{2026,6,23},{5,15,30}}] JOB 1002 granted
+
+[{{2026,6,23},{5,15,30}}] JOB 1010 granted
+
+[{{2026,6,23},{5,15,30}}] JOB 1009 granted
+
+[{{2026,6,23},{5,15,30}}] JOB 1008 granted
+
+[{{2026,6,23},{5,15,30}}] JOB 1007 granted
+
+[{{2026,6,23},{5,15,33}}] JOB 1002 timeout
+
+[{{2026,6,23},{5,15,33}}] JOB 1003 timeout
+
+[{{2026,6,23},{5,15,34}}] JOB 1011 granted
+
+[{{2026,6,23},{5,15,34}}] JOB 1003 granted
+
+[{{2026,6,23},{5,15,34}}] JOB 1012 granted
+
+[{{2026,6,23},{5,15,37}}] JOB 1015 granted
+
+[{{2026,6,23},{5,15,38}}] JOB 1007 timeout
+
+[{{2026,6,23},{5,15,39}}] JOB 1019 granted
+
+[{{2026,6,23},{5,15,39}}] JOB 1018 granted
+
+[{{2026,6,23},{5,15,39}}] JOB 1020 granted
+
+[{{2026,6,23},{5,15,40}}] JOB 1013 granted
+
+[{{2026,6,23},{5,15,41}}] JOB 1022 granted
+
+[{{2026,6,23},{5,15,43}}] JOB 1010 timeout
+
+[{{2026,6,23},{5,15,43}}] JOB 1011 timeout
+
+[{{2026,6,23},{5,15,43}}] JOB 1023 granted
+
+[{{2026,6,23},{5,15,45}}] JOB 1016 granted
+
+[{{2026,6,23},{5,15,50}}] JOB 1014 timeout
+
+[{{2026,6,23},{5,15,55}}] JOB 1016 timeout
+
+[{{2026,6,23},{5,15,55}}] JOB 1017 timeout
+
+[{{2026,6,23},{5,15,55}}] JOB 1021 granted
+
+[{{2026,6,23},{5,16,0}}] JOB 1020 timeout
+
+[{{2026,6,23},{5,37,50}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,23},{5,37,50}}] JOB 1001 granted
+
+[{{2026,6,23},{5,37,51}}] JOB 1002 granted
+
+[{{2026,6,23},{5,37,58}}] JOB 1003 granted
+
+[{{2026,6,23},{5,38,14}}] JOB 1012 granted
+
+[{{2026,6,23},{5,38,14}}] JOB 1008 granted
+
+[{{2026,6,23},{5,38,14}}] JOB 1011 granted
+
+[{{2026,6,23},{5,38,14}}] JOB 1005 granted
+
+[{{2026,6,23},{5,38,19}}] JOB 1013 granted
+
+[{{2026,6,23},{5,38,28}}] JOB 1004 timeout
+
+[{{2026,6,23},{5,38,28}}] JOB 1006 timeout
+
+[{{2026,6,23},{5,38,28}}] JOB 1026 granted
+
+[{{2026,6,23},{5,38,28}}] JOB 1023 granted
+
+[{{2026,6,23},{5,38,28}}] JOB 1021 granted
+
+[{{2026,6,23},{5,38,28}}] JOB 1010 granted
+
+[{{2026,6,23},{5,38,28}}] JOB 1020 granted
+
+[{{2026,6,23},{5,38,28}}] JOB 1019 granted
+
+[{{2026,6,23},{5,38,28}}] JOB 1018 granted
+
+[{{2026,6,23},{5,38,28}}] JOB 1022 granted
+
+[{{2026,6,23},{5,38,28}}] JOB 1025 granted
+
+[{{2026,6,23},{5,38,28}}] JOB 1009 granted
+
+[{{2026,6,23},{5,38,28}}] JOB 1007 granted
+
+[{{2026,6,23},{5,38,28}}] JOB 1015 granted
+
+[{{2026,6,23},{5,38,38}}] JOB 1004 granted
+
+[{{2026,6,23},{5,38,38}}] JOB 1027 granted
+
+[{{2026,6,23},{5,38,38}}] JOB 1006 granted
+
+[{{2026,6,23},{5,38,39}}] JOB 1014 timeout
+
+[{{2026,6,23},{5,38,44}}] JOB 1016 timeout
+
+[{{2026,6,23},{5,38,44}}] JOB 1017 timeout
+
+[{{2026,6,23},{5,38,44}}] JOB 1028 granted
+
+[{{2026,6,23},{5,38,44}}] JOB 1032 granted
+
+[{{2026,6,23},{5,38,44}}] JOB 1031 granted
+
+[{{2026,6,23},{5,38,44}}] JOB 1030 granted
+
+[{{2026,6,23},{5,38,44}}] JOB 1024 granted
+
+[{{2026,6,23},{5,38,44}}] JOB 1029 granted
+
+[{{2026,6,23},{5,38,46}}] JOB 1034 granted
+
+[{{2026,6,23},{5,38,46}}] JOB 1014 granted
+
+[{{2026,6,23},{5,38,46}}] JOB 1033 granted
+
+[{{2026,6,23},{5,38,49}}] JOB 1035 granted
+
+[{{2026,6,23},{5,38,50}}] JOB 1016 granted
+
+[{{2026,6,23},{5,38,51}}] JOB "all_jobs_cancelled" connection_closed
+

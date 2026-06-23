@@ -15,6 +15,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <fcntl.h>
+#include "comunicaciones.h"
 
 
 
@@ -51,5 +52,6 @@ void enqueue_jobs(const char* resource, int job_id, int amount, int fd_actual);
 void reserve_elements();
 
 char* obtener_string_nodos(job_entry* job_table[]);
-
+void release_client_by_fd(int fd);
+void drain_queue(p_queue_t* q, int* avail, const char* type);
 #endif /* UTILS_H */

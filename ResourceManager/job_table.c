@@ -19,8 +19,8 @@ granted_t* MakeGranted(char* type, int amount, char* dest_ip){
     new->type[sizeof(new->type) - 1] = '\0'; 
     new->amount = amount;
 
-    strncpy(new->dest_ip, dest_ip, sizeof(new->dest_ip) - 1);
-    new->dest_ip[sizeof(new->dest_ip) - 1] = '\0';
+    strncpy(new->dest_ip, dest_ip, IP_LEN - 1);
+    new->dest_ip[IP_LEN - 1] = '\0';
 
     new->next = NULL;
     
@@ -50,6 +50,7 @@ job_entry* MakeJob(int job_id, int origin_socket, time_t time){
     new->timestamp = time;
     new->resources = NULL; 
     new->next_job = NULL;
+    new->next_req = NULL;
     
     return new;
     } 
@@ -145,9 +146,6 @@ job_entry* FindJob(active_jobs* table, int job_id){
     while( look != NULL && look->job_id != job_id ){
         look = look->next_job;
        }
-    if (look == NULL){
-    printf("job <%d>\t is not in the table\n", job_id);
-    }
     pthread_mutex_unlock(&table->mutexTable);
     return look;
    }
@@ -161,7 +159,10 @@ void RemoveJob(active_jobs* table, int job_id){
         prev = current; 
         current = current->next_job;
      }
-    assert(current != NULL); //no existe el job
+    if (current == NULL) {                 // antes: assert(current != NULL)
+        pthread_mutex_unlock(&table->mutexTable);
+        return;
+    }
     if(prev == NULL)
       table->job_table[idx] = current->next_job; // el job que queriamos borrar era el primero
     else

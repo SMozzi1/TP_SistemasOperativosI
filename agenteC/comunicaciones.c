@@ -232,16 +232,8 @@ void client_to_myserver(int fd_actual, char *instruction) {
     }
     /* ── RELEASE: the remote node is freeing a resource we granted it ── */
     else if (!strcmp(tokens[0], "RELEASE")) {
-        if (num < 2) return;
-        int job_id = atoi(tokens[1]);
-
-        job_entry* job = FindJob(&table_clients, job_id);
-        update_local_resources(job);
-        //Vemos si podemos reservarle a alguien que este esperando por ese recurso el recurso que se libero
-        reserve_elements();
-        //job_entry* job = FindJob(&table_clients, job_id);
-        //Si me devuelven el realese, me devuelven todos los elementos que me pidieron
-        RemoveJob(&table_clients, job_id);
+        if (num >= 2) printf("[SERVER] RELEASE job %s en fd=%d\n", tokens[1], fd_actual);
+            release_client_by_fd(fd_actual);   // la clave es el socket, no el job_id
     }
     /* ── GRANTED / DENIED: response to a RESERVE we sent ─────────────── */
     else if (!strcmp(tokens[0], "GRANTED")) {
@@ -348,17 +340,24 @@ void erlang_to_C(char *instruction, time_t timer) {
             
             int amount = atoi(dest_amt);
             
-            // ERROR CORREGIDO: Estabas pasando 'dest_amt' dos veces. 
-            // Ahora pasas el recurso ("cpu") y la cantidad (2).
+            // Creamos el recurso
             granted_t* element = MakeGranted(dest_res, amount, dest_ip);
             
-            // OJO: Si la IP varía por recurso, deberías guardar dest_ip y el puerto 
-            // DENTRO del 'element' (granted_t), no en el job global.
+            // BÚSQUEDA O(1): Convertimos la IP de Erlang y buscamos en la tabla
+            int target_ip_int = abs((int)inet_addr(dest_ip));
+            job_entry* remote_node = FindJob(&table_nodes, target_ip_int);
+            
+            if (remote_node != NULL) {
+                // Si encontramos al vecino, sacamos el puerto real (que guardaste en origin_socket)
+                element->dest_port = remote_node->origin_socket; 
+            } else {
+                element->dest_port = 4200; // Fallback por si el nodo recién arranca
+            }
             
             AddResource(newjob, element);
         }
 
-        JobsTableInsert(&table_nodes, newjob); // O 'ownjobs' si es global
+        JobsTableInsert(&table_ourjobs, newjob); // O 'ownjobs' si es global
 
         // ERROR CORREGIDO: La firma real de tu función es de 1 argumento
         ask_for_next_resource(newjob);
@@ -366,14 +365,15 @@ void erlang_to_C(char *instruction, time_t timer) {
     }
     /* ── JOB_RELEASE ─────────────────────────────────────────────── */
     else if (!strcmp(tokens[0], "JOB_RELEASE")) {
-        if (num < 2) return;
+    if (num < 2) return;
+    int job_id = atoi(tokens[1]);
 
-        int job_id = atoi(tokens[1]);
-        job_entry* job = FindJob(&table_nodes, job_id);
-        release_resources(job);
+    job_entry* job = FindJob(&table_ourjobs, job_id);   // antes: &table_nodes
+    if (job == NULL) return;                            // ya no está, nada que hacer
 
-        RemoveJob(&table_nodes, job_id);
-    }
+    release_resources(job);                             // manda RELEASE a cada provider_fd
+    RemoveJob(&table_ourjobs, job_id);                  // antes: &table_nodes
+}
 
     /* ── JOB_STATUS ──────────────────────────────────────────────── */
 
@@ -387,8 +387,9 @@ void erlang_to_C(char *instruction, time_t timer) {
     /* ── GET_NODES ────────────────────────────────────────────────── */
     else if(!strcmp(tokens[0], "GET_NODES")){
 
+        pthread_mutex_lock(&table_nodes.mutexTable);
         char* nodedata = obtener_string_nodos(table_nodes.job_table);
-
+        pthread_mutex_unlock(&table_nodes.mutexTable);
         if (send(erlangfd, nodedata, strlen(nodedata), MSG_DONTWAIT) < 0) {
             perror("[ERROR] erlang_to_C: send GET_NODES response");
         }
