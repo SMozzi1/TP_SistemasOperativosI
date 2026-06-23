@@ -25,7 +25,7 @@
 
 
 
-/* Inventario de recursos locales disponibles */
+// Inventory of available local resources.
 int cpu_available = 4;
 int mem_available = 8192;
 int gpu_available = 1;
@@ -262,7 +262,8 @@ static void* event_loop(void *arg) {
 
                 char *tokens[10];
                 int num = get_token(copy, tokens, 10);
-                if (num < 2) continue; // Al menos necesitamos ANNOUNCE y el Puerto
+                if (num < 2) continue; // At least we need ANNOUNCE and the port
+
                 
                 //We get the ip 
                 char sender_ip[INET_ADDRSTRLEN];
@@ -300,7 +301,7 @@ static void* event_loop(void *arg) {
                 for(int i = 2; i < num; i++) {
                     char *res_token = tokens[i]; 
                     
-                    // CORRECCIÓN 2: Usamos 'strtok_r' (reentrant) que es seguro para hilos
+                    // CORRECTION 2: We use 'strtol_r' (reentrant) which is thread-safe.
                     char *res_type  = strtok_r(res_token, ":", &saveptr1);
                     char *res_amt   = strtok_r(NULL, ":", &saveptr1);
 
