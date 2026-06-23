@@ -105,6 +105,15 @@ Ningun job abre su propio socket ni habla directamente con el agente C. Todo pas
 Como no esta definido un parametro de cuanto tiempo esperar entre cada trabajo ni cuanto tomar de cada recurso, se opto por la aleatoriedad (acotada por el tiempo maximo o los recursos maximos de un nodo).
 
 ## 3) Manejo de deadlocks
+La idea para poder solucionar deadlocks es bastante sencilla, se divide en dos secciones, cada una atacando una condicion de Koffman distina:
+
+1) Romper la circular wait: Consiste en dar siempre el mismo orden para pedir los datos a los nodos. Esto lo que genera es que en caso de dos nodos tener los mismos recursos a pedir, como tienen el mismo orden, el que pida y tome el primer dato primero, sera el que continue con el resto, mientras el otro espere a que se libere el primero. Claramente esto rompe la espera circular, ya que, segun el orden establecido en nuestra implementacion, se piden siempre en orden de CPU > MEM > GPU. 
+
+Esta solucion es potencialmente valida para el trabajo SI Y SOLO SI todos los demas agentes que piden recursos respetan este orden. En caso de existir un scheduler que pida los recursos en otro orden se generaria una posible circular-wait -> DEADLOCK. Por ende, ademas implementamos otra solucion:
+
+2) Atacar el No-Preemption: Basado en una logica de timeouts, donde, si un nodo esta esperando un recurso por un cierto tiempo, no consiguio el recurso que buscaba, entonces se le saca de la cola de jobs esperando recursos yse le indica al scheduler de Erlang que ese job tuvo un TIMEOUT, para que luego de un tiempo se relanze este mismo job, pidiendo los mismos recursos. Esto lo que hace es suponer que si hay recursos trabados en una espera, lo mas probable es que sea causa de deadlock, con lo cual podemos eliminar al que mas tiempo lleva esperando de la queue, de tal forma que el otro nodo trabado pueda avanzar .
+
+Con estas dos implementaciones, no solo preevenimos un deadlock facilmente en nuestro scheduler gracias a 1), sino tambien lo preevenimos en caso de que el orden de pedido de recurso no sea el que estemos usando.
 
 La idea es bastante basica y requiere que todos los mensajes enviados por otro agente de Erlang sigan la misma ejecucion, y se basa en romper el circular wait.
 
