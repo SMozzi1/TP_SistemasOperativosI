@@ -34,7 +34,7 @@ int epollfd = -1;
 int erlangfd = -1;
 active_jobs table_ourjobs;
 
-/* Mutex para proteger el inventario local de condiciones de carrera */
+/* Mutex we use to prevent race condition */
 pthread_mutex_t mutex_resources = PTHREAD_MUTEX_INITIALIZER;
 
 active_jobs table_nodes;
@@ -63,6 +63,7 @@ int socket_UDP;
 //Socket initialization
 static void initialize_listen_sockets(void) {
     struct sockaddr_in server_addr, erlang_addr, udp_addr;
+    //Works as a boolean to activate an socket option
     int opt = 1;
 
     /* Create all three sockets in non-blocking mode */
@@ -108,20 +109,22 @@ static void initialize_listen_sockets(void) {
     udp_addr.sin_port        = htons(BROADCAST_PORT);
     udp_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
+    //We bind all of them
     if (bind(socket_server, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0 ||
         bind(socket_erlang, (struct sockaddr *)&erlang_addr, sizeof(erlang_addr)) < 0 ||
         bind(socket_UDP,    (struct sockaddr *)&udp_addr,    sizeof(udp_addr))    < 0)
         fatal_error("bind() failed");
 
+    //We only set socket_server and socket_erlang as listening sockets
     if (listen(socket_server, 10) < 0 || listen(socket_erlang, 10) < 0)
         fatal_error("listen() failed");
 
-    printf("[INIT] Listening on TCP 0.0.0.0:%d (nodes), 127.0.0.1:%d (Erlang), UDP %d (broadcast)\n",
-           PORT, PORT, BROADCAST_PORT);
+    // printf("[INIT] Listening on TCP 0.0.0.0:%d (nodes), 127.0.0.1:%d (Erlang), UDP %d (broadcast)\n",
+    //        PORT, PORT, BROADCAST_PORT);
 }
 
 
-    //Event loop (executed by every threads)
+//Event loop (executed by every threads)
 static void* event_loop(void *arg) {
     worker_args_t     *args   = (worker_args_t *)arg;
     struct epoll_event events[MAX_EVENTS];
@@ -148,7 +151,7 @@ static void* event_loop(void *arg) {
 
                     continue;
                 }
-
+                //we set an epoll fd for 
                 struct epoll_event ev;
                 ev.events  = EPOLLIN;
                 ev.data.fd = new_fd;
@@ -159,18 +162,14 @@ static void* event_loop(void *arg) {
                     continue;
                 }
 
-                /*
-                 * Store the fd globally.
-                 * NOTE: if multiple simultaneous Erlang connections were possible
-                 * (unlikely by design), this would need a mutex-protected array.
-                 * For this assignment a single erlangfd is sufficient.
-                 */
+                /* Store the fd globally.*/
                 erlangfd = new_fd;
                 printf("[EVENT A] Erlang connected on fd=%d\n", erlangfd);
             }
 
             /* ── B: new connection from a remote node ───────────────── */
             else if (fd == socket_server) {
+
                 struct sockaddr_in client_addr;
                 socklen_t len = sizeof(client_addr);
                 int client_fd = accept4(socket_server,
@@ -183,14 +182,16 @@ static void* event_loop(void *arg) {
                 }
 
                 /*
-                 * EPOLLONESHOT: ensures only ONE thread processes this fd
-                 * per event round, preventing race conditions without an
-                 * additional per-fd mutex.
+                    EPOLLONESHOT: ensures only ONE thread processes this fd
+                    per event round, preventing race conditions without an
+                    additional per-fd mutex.
                  */
                 struct epoll_event ev;
                 ev.events  = EPOLLIN | EPOLLONESHOT;
                 ev.data.fd = client_fd;
 
+                //Add the client_fd into epoll
+                //every time this fd send us a message, erlang_wait wakes up
                 if (epoll_ctl(epollfd, EPOLL_CTL_ADD, client_fd, &ev) < 0) {
                     log_error("epoll_ctl ADD remote client");
                     close(client_fd);
@@ -203,18 +204,20 @@ static void* event_loop(void *arg) {
             /* ── C: UDP broadcast timer fired. send a message ───────────────────────── */
             else if (fd == args->broadcast_timer_fd) {
                 uint64_t exp;
-                /* Must read the timer fd to clear its readable state;
-                 * otherwise epoll keeps waking us up in a busy loop.  */
+                /*  Must read the timer fd to clear its readable state;
+                    otherwise epoll keeps waking us up in a busy loop.  */
                 if (read(fd, &exp, sizeof(exp)) < 0) {
                     log_error("read broadcast timer");
                 }
+
+                //We send a message whith our port and elements
                 char msg[126];
                 pthread_mutex_lock(&mutex_resources);
-                snprintf(msg, sizeof(msg), "ANNOUNCE %d cpu:%d mem:%d gpu:%d\n",
-                PORT, cpu_available, mem_available, gpu_available);
+                snprintf(msg, sizeof(msg), "ANNOUNCE %d cpu:%d mem:%d gpu:%d\n", PORT, cpu_available, mem_available, gpu_available);
                 pthread_mutex_unlock(&mutex_resources);
+
                 /*
-                 * Format: ANNOUNCE <port> <resources>  (image 2)
+                 * Format: ANNOUNCE <port> <resources>
                  * The sender IP is NOT in the payload; it is extracted
                  * from recvfrom() by the receiving node.
                  */
@@ -224,16 +227,14 @@ static void* event_loop(void *arg) {
                 bcast_addr.sin_port        = htons(BROADCAST_PORT);
                 bcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
 
-                ssize_t sent = sendto(socket_UDP, msg,
-                                      strlen(msg), 0,
-                                      (struct sockaddr *)&bcast_addr,
-                                      sizeof(bcast_addr));
+                ssize_t sent = sendto(socket_UDP, msg, strlen(msg), 0,(struct sockaddr *)&bcast_addr, sizeof(bcast_addr));
                 if (sent < 0) log_error("[UDP BCAST] sendto failed");
                 else printf("[UDP BCAST] Announcement sent: %s\n", msg);
             }
 
             /* ── D: job timeout timer fired ─────────────────────────── */
-            else if (fd == args->timeout_timer_fd) {
+            /*Reads the timer file descriptor to clear its state and invokes timeout checks for both remote node jobs and local jobs.*/
+            else if (fd == args->timeout_timer_fd) { 
                 uint64_t exp;
                 if (read(fd, &exp, sizeof(exp)) < 0) {
                     log_error("read timeout timer");
@@ -243,7 +244,9 @@ static void* event_loop(void *arg) {
             }
 
             /* ── E: incoming UDP datagram from another node ─────────── */
+            //We get the message ANNOUNCE and keep the Node in table_nodes
             else if (fd == socket_UDP) {
+
                 char buf[BUFFER_LEN];
                 struct sockaddr_in sender;
                 socklen_t slen = sizeof(sender);
@@ -261,16 +264,19 @@ static void* event_loop(void *arg) {
                 int num = get_token(copy, tokens, 10);
                 if (num < 2) continue; // Al menos necesitamos ANNOUNCE y el Puerto
                 
-                // CORRECCIÓN 1: 'inet_ntop' es 100% seguro entre hilos
+                //We get the ip 
                 char sender_ip[INET_ADDRSTRLEN];
                 inet_ntop(AF_INET, &(sender.sin_addr), sender_ip, sizeof(sender_ip));
 
                 int nodo_puerto = atoi(tokens[1]);
                 
-                // ¡LA MAGIA!: Convertimos la IP string a int y la forzamos a positivo
+                /* Converts the sender's IP address (string) into a 32-bit integer identifier.
+                inet_addr: Translates the IPv4 string (e.g., "172.21.155.36") into a 32-bit 
+                binary representation in network byte order.This serves as a unique numeric key for the node in the job table.
+                */
                 int nodo_id = abs((int)inet_addr(sender_ip)); 
 
-                // Buscamos si el nodo ya existía usando su IP hasheada
+                // We check if the node is already in the table
                 job_entry* nodo = FindJob(&table_nodes, nodo_id);
                 int is_new = (nodo == NULL);
 
@@ -287,10 +293,10 @@ static void* event_loop(void *arg) {
                     nodo = MakeJob(nodo_id, nodo_puerto, time(NULL));
                 }
 
-                // Puntero para usar con strtok_r
+                // Pointer for use with strtok_r
                 char *saveptr1; 
 
-                // Procesamos los recursos
+                // process resources
                 for(int i = 2; i < num; i++) {
                     char *res_token = tokens[i]; 
                     
@@ -313,14 +319,15 @@ static void* event_loop(void *arg) {
                         
                         res->dest_port = nodo_puerto;
                         
-                        // Insertar al principio de la lista enlazada del nodo
+                        //Insert at the beginning of the node's linked list
                         res->next = nodo->resources;
                         nodo->resources = res;
                     }
                 }
 
-                // Solo lo insertamos en la tabla si es un nodo que no existía previamente
-                // (Si ya existía, modificamos directamente sus recursos sobre el puntero que nos dio FindJob)
+
+                /*We only insert it into the table if it's a node that didn't previously exist.
+                (If it already existed, we directly modify its resources using the pointer provided by FindJob)*/
                 if (is_new) {
                     JobsTableInsert(&table_nodes, nodo);
                 }
@@ -328,6 +335,7 @@ static void* event_loop(void *arg) {
             }
 
             /* ── F: incoming TCP data from Erlang ───────────────────── */
+            /// Read messages arriving from Erlang
             else if (fd == erlangfd) {
                 char line[BUFFER_LEN];
                 int result = read_until_newline(fd, line);
@@ -342,26 +350,33 @@ static void* event_loop(void *arg) {
                     clear_connection_buffer(erlangfd);
                     erlangfd = -1;
                 }
-                /* result == 0: incomplete message, epoll will notify us again */
+              
             }
 
             /* ── G: Send message from a job requesting - Request job*/
+            // If a socket is flagged with EPOLLOUT, it indicates that the underlying 
+            // network buffer is ready to transmit data; we use this event to trigger 
+            // the dispatch of a pending resource request.
             else if (events[i].events & EPOLLOUT) {
-                //Este fd es el que esta relacionado a un tipo de dato 
+                //
                 int fd_listo = events[i].data.fd;
                 
-                // Aquí buscas qué Job y qué Recurso son dueños de este FD
-                job_entry* job = BuscarJobPorFD(fd_listo); // Debes implementar esta lógica de búsqueda
+                // We find out which Job and which Resource own this FD
+                job_entry* job = BuscarJobPorFD(fd_listo); 
                 
                 if (job != NULL && job->next_req != NULL) {
                     char msg[256];
                     snprintf(msg, sizeof(msg), "RESERVE %d %s %d\n", 
                             job->job_id, job->next_req->type, job->next_req->amount);
                             
-                    // ¡Aquí enviamos el mensaje por fin!
+                 
                     send(fd_listo, msg, strlen(msg), MSG_NOSIGNAL);
                     
-                    // Modificamos epoll para quitar EPOLLOUT, ahora solo queremos LEER (EPOLLIN) la respuesta
+                    /* Rearm the epoll registration to switch from EPOLLOUT (writing) to EPOLLIN (reading).
+                    This ensures we stop monitoring for write-ready states and begin waiting for 
+                    the peer's response to our request. We use EPOLLET (Edge-Triggered) and 
+                    EPOLLONESHOT for high-performance, single-thread-per-event delivery.
+                    */
                     struct epoll_event ev;
                     ev.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
                     ev.data.fd = fd_listo;
@@ -369,8 +384,7 @@ static void* event_loop(void *arg) {
                 }
             }
 
-            /* ── H: incoming TCP data from a remote node (or outgoing socket) 
-                  lo que se recibe de nodos */
+            /* ── H: incoming TCP data from a remote node (or outgoing socket) */
             else {
                 char line[BUFFER_LEN];
                 int result = read_until_newline(fd, line);
@@ -386,20 +400,19 @@ static void* event_loop(void *arg) {
 
                 } else if (result == -1) {
                     fprintf(stderr, "[EVENT G] Remote node fd=%d disconnected\n", fd);
-                    release_client_by_fd(fd);          // libera lo que tuviera reservado por este fd
-                    handle_outbound_disconnect(fd);    // por si nos llamabamos nosotros mismos
-                    epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL);
+                    release_client_by_fd(fd);          // release what you had reserved for this fd
+                    handle_outbound_disconnect(fd);    // in case we call ourselves
+                    epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL); //then deleate from epoll
                     close(fd);
                     clear_connection_buffer(fd);
                     continue;
                 }
 
                 /*
-                 * MANDATORY EPOLLONESHOT REARM.
-                 * After EPOLLONESHOT fires, the kernel disables monitoring for
-                 * this fd. We must re-enable it explicitly with EPOLL_CTL_MOD.
-                 * Rearm for result == 0 (waiting for more data) and result == 1
-                 * (ready for the next_job message). Skip only for result == -1 (dead).
+                    After EPOLLONESHOT fires, the kernel disables monitoring for
+                    this fd. We must re-enable it explicitly with EPOLL_CTL_MOD.
+                    Rearm for result == 0 (waiting for more data) and result == 1
+                    (ready for the next_job message). Skip only for result == -1 (dead).
                  */
                 if (result >= 0) {
                     struct epoll_event ev_rearm;
@@ -454,14 +467,14 @@ void setup_epoll(void) {
         fatal_error("epoll_ctl ADD listening sockets failed");
 
     /*
-     * Create TWO timerfd instances:
-     *  1. broadcast_timer -> sends ANNOUNCE via UDP every 5 s (first fire: 1 s)
-     *  2. timeout_timer   -> checks expired jobs every 5 s   (first fire: 5 s)
-     *
-     * Both timers are shared across all worker threads. Because epoll delivers
-     * a timer event to exactly one thread at a time, no extra locking is needed
-     * for the timer read itself (check_job_timeouts uses its own mutex internally).
-     */
+        Create TWO timerfd instances:
+        1. broadcast_timer -> sends ANNOUNCE via UDP every 5 s (first fire: 1 s)
+        2. timeout_timer   -> checks expired jobs every 5 s   (first fire: 5 s)
+     
+         Both timers are shared across all worker threads. Because epoll delivers
+        a timer event to exactly one thread at a time, no extra locking is needed
+        for the timer read itself (check_job_timeouts uses its own mutex internally).
+    */
     static worker_args_t args;  /* static so it outlives this stack frame */
     args.broadcast_timer_fd = make_timer(1, 5);
     args.timeout_timer_fd   = make_timer(5, 5);
