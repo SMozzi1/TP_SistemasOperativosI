@@ -10,28 +10,30 @@
 #define TABLE_SIZE 256
 #define IP_LEN 16
 
+//Granted resource structure
 typedef struct granted_t {
-    char type[8];//gpu, mem, cpu
-    int amount;   //reserved amount
-
-    int provider_fd; //fd que dio el recurso, (para hacer realese)
-    char dest_ip[IP_LEN];  //ip de donde quiero buscar el recurso
-    int dest_port; //Puerto de asociado a esa ip
-    struct granted_t* next; //linked list of resources granted
+    char type[8];           /* resource type: gpu, mem, cpu */
+    int amount;             /*reserved amount*/
+    int provider_fd;        /* fd provided by resource (used for release) */
+    char dest_ip[IP_LEN];   /* ip of the node to request the resource from */
+    int dest_port;          /* port associated to that ip */
+    struct granted_t* next; /* linked list of granted resources */
 } granted_t;
 
-//Cambie el nombre job_entry a job__entry asi no hat errpr 
+
+//Job entry structure
 typedef struct job_entry { 
     int job_id;
     int origin_socket;
-    time_t timestamp; //checkear bien de que tipo son.
+    time_t timestamp; 
     granted_t* resources;
-    granted_t* next_req; //Puntero aux que se mueve de acuerdo a los pedidos de los otros 
-    struct job_entry* next_job; //colisiones por encadenamiento.
+    granted_t* next_req; /*aux pointer*/
+    struct job_entry* next_job; 
 
 
 } job_entry; 
 
+//job table
 typedef struct active_jobs {
    job_entry* job_table[TABLE_SIZE];
    int active_count; //amount of total jobs in the table
@@ -63,34 +65,6 @@ job_entry* FindJob(active_jobs* table, int job_id);
 void RemoveJob(active_jobs* table, int job_id);
 void PrintTable(active_jobs* table);
 job_entry* FindJobBySocket(active_jobs* table, int job_id, int origin_socket);
-
-/* ---------------- FIFO Queues for Pending Resource Requests ----------*/
-
-// typedef struct pending_node_s {
-//     job_entry* job;
-//     int amount_req;
-//     struct pending_node_s* next;
-// } pending_node_t;
-
-// typedef struct fifo_queue_s {
-//     pending_node_t* head;
-//     pending_node_t* tail;
-//     pthread_mutex_t queue_mutex;
-// } fifo_queue_t;
-
-// /* ---------- Function prototypes for queue and resource management -------- */
-
-// void init_queue(fifo_queue_t* queue);
-// void enqueue_job(fifo_queue_t* queue, job_entry* job, int amount);
-// void process_queue(fifo_queue_t* queue, int* available_resource, const char* resource_name);
-
-
-// /*---------aux_functions--------*/
-// void remove_specific_resource(job_entry* job, const char* resource_name);
-// void update_local_resources(const char* resource_name, int amount);
-
-
-
 job_entry* BuscarJobPorFD(int fd_listo);
 
 

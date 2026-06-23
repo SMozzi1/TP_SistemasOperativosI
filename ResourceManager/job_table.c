@@ -61,20 +61,8 @@ void DestroyJob(job_entry* job){
     free(job);
 }
 
-//Funcion de Ro
-//Agrega al principio de la lista de recursos otorgados al job
-// //adds element to the list of granted resources
-// void AddResource(job_entry* job, granted_t* res){
-//    if(job->resources == NULL){ // empty list
-//        job->resources = res;
-//     }
-//    else{
-//         res->next = job->resources;
-//         job->resources = res;
-//         }
-// }
 
-//Para agregar al final
+//Adds resource at the end of the list of granted resources
 void AddResource(job_entry* job, granted_t* res){
 
     res->next = NULL;
@@ -85,7 +73,7 @@ void AddResource(job_entry* job, granted_t* res){
     else {
         granted_t* actual = job->resources;
         while (actual->next != NULL) {
-            actual = actual->next; // Avanzamos hasta el final
+            actual = actual->next; // Iterate until it reaches end of the list
         }
         
         actual->next = res;
@@ -120,15 +108,12 @@ void DestroyJobsTable(active_jobs* table){
         table->active_count = 0; 
   }
 
-/*Se supone que como las id generadas por erlang son unicas, no deberia
-  haber una mala distribucion. A CHECKEAR!!! (soy mozzi: esta bien son unicas
-  y la hash funciona eficiente por eso)
-*/
-
+/*hashing function*/
 int HashF(int job_id){
      return job_id % TABLE_SIZE;
 }
 
+//Inserts a job in the table
 void JobsTableInsert(active_jobs* table, job_entry* job){
     pthread_mutex_lock(&table->mutexTable);
    int idx = HashF(job->job_id); 
@@ -138,7 +123,7 @@ void JobsTableInsert(active_jobs* table, job_entry* job){
     pthread_mutex_unlock(&table->mutexTable);
 }
 
-
+//returns job_entry corresponding to specified by job_id 
 job_entry* FindJob(active_jobs* table, int job_id){
     pthread_mutex_lock(&table->mutexTable);
     int search = HashF(job_id);
@@ -148,24 +133,32 @@ job_entry* FindJob(active_jobs* table, int job_id){
        }
     pthread_mutex_unlock(&table->mutexTable);
     return look;
-   }
-    
+}
+
+//Removes job from the table.   
 void RemoveJob(active_jobs* table, int job_id){
     pthread_mutex_lock(&table->mutexTable);
      int idx = HashF(job_id);
-     job_entry* prev = NULL;
+     job_entry* prev = NULL; /*tracks the node behind current for relinking*/
+
      job_entry* current = table->job_table[idx];
+
+     /* traverse the bucket list until we find the job or exhaust the list */
      while (current != NULL && current->job_id != job_id){
         prev = current; 
         current = current->next_job;
      }
-    if (current == NULL) {                 // antes: assert(current != NULL)
+
+    /* job not found — nothing to remove */
+    if (current == NULL) {                
         pthread_mutex_unlock(&table->mutexTable);
         return;
     }
+    /*we relink the nodes bypassing the node we are removing*/
     if(prev == NULL)
-      table->job_table[idx] = current->next_job; // el job que queriamos borrar era el primero
+      table->job_table[idx] = current->next_job; /* removed node was the head of the bucket */
     else
+     /* The target node is mid-list*/
         prev->next_job = current->next_job;
     
     table->active_count--;
@@ -173,7 +166,7 @@ void RemoveJob(active_jobs* table, int job_id){
     pthread_mutex_unlock(&table->mutexTable);
     
 }
-
+/*prints resources*/
 void PrintResources(granted_t* resources){
     granted_t* look = resources;
     while(look!=NULL){
@@ -181,13 +174,14 @@ void PrintResources(granted_t* resources){
     look = look->next;}
 printf("\n");
 }
-
+/*prints job*/
 void PrintJob(job_entry* job){
     printf("job_id: <%d> socket: <%d> time: <%s>", job->job_id, job->origin_socket, 
                                                       ctime(&job->timestamp));
     printf("active resources: ");
     PrintResources(job->resources);
 }
+/*prints entire table*/
 void PrintTable(active_jobs* table){
     printf("START\n");
 
@@ -205,98 +199,7 @@ void PrintTable(active_jobs* table){
     printf("END\n");
 }
 
-// /*-------- queue functions ---------*/
-
-// void init_queue(fifo_queue_t* queue) {
-//     queue->head = NULL;
-//     queue->tail = NULL;
-//     pthread_mutex_init(&queue->queue_mutex, NULL);
-// }
-
-// void enqueue_job(fifo_queue_t* queue, job_entry* job, int amount) {
-//     pending_node_t* new_node = malloc(sizeof(pending_node_t));
-//     if (!new_node) return;
-    
-//     new_node->job = job;
-//     new_node->amount_req = amount;
-//     new_node->next = NULL;
-
-//     /* we protect the incertion to the queue */
-//     pthread_mutex_lock(&queue->queue_mutex);
-
-//     if (queue->tail == NULL) {
-//         queue->head = new_node;
-//         queue->tail = new_node;
-//     } else {
-//         queue->tail->next = new_node;
-//         queue->tail = new_node;
-//     }
-
-//     pthread_mutex_unlock(&queue->queue_mutex);
-// }
-
-
-// void process_queue(fifo_queue_t* queue, int* available_resource, const char* resource_name) {
-//     /* take the lock */
-//     pthread_mutex_lock(&queue->queue_mutex);
-//     int resources = 1; // to stop if we cant give the resources
-//     while (queue->head != NULL && resources) {
-//         pending_node_t* first = queue->head;
-
-//         /* here we assume that we had the lock to the global resources previous to the call
-//         of this function  */
-//         if (*available_resource >= first->amount_req) {
-//             *available_resource -= first->amount_req;
-
-//             char msg[128];
-//             strcpy(msg, ("GRANTED %d\n", first->job->job_id));
-//             send(first->job->origin_socket, msg, strlen(msg), MSG_NOSIGNAL);
-
-//             printf("[INFO] Desencolando: Trabajo %d obtuvo %d de %s.\n",
-//                    first->job->job_id, first->amount_req, resource_name);
-
-//             queue->head = first->next;
-//             if (queue->head == NULL) {
-//                 queue->tail = NULL;
-//             }
-//             free(first);
-//         } else {
-//             resources = 0; 
-//         }
-//     }
-
-//     pthread_mutex_unlock(&queue->queue_mutex);
-// }
-
-
-// /* ------- aux functions -------*/
-
-// void remove_specific_resource(job_entry* job, const char* resource_name) {
-//     if (job == NULL || job->resources == NULL) return;
-
-//     granted_t* actual = job->resources;
-//     granted_t* anterior = NULL;
-
-//     while (actual != NULL) {
-//         if (strcmp(actual->type, resource_name) == 0) {
-//             /* we find it so we take it from the queue */
-//             if (anterior == NULL) {
-//                 job->resources = actual->next; // it was the first-one
-//             } else {
-//                 anterior->next = actual->next; // it was in the middle or at the end
-//             }
-            
-//             /* we free the memory */
-//             DestroyGranted(actual);
-//             return;
-//         }
-//         anterior = actual;
-//         actual = actual->next;
-//     }
-// }
-
-
-
+/*Search jobs by fd inside of table_ourjobs*/
 job_entry* BuscarJobPorFD(int fd) {
     for (int i = 0; i < TABLE_SIZE; i++) {
         job_entry* current = table_ourjobs.job_table[i];
@@ -307,9 +210,10 @@ job_entry* BuscarJobPorFD(int fd) {
             current = current->next_job;
         }
     }
-    return NULL; // No se encontró ningún job con el fd dado
+    return NULL; /*no job with given fd found*/
 }
 
+/*searches job by fd inside a given table*/
 job_entry* FindJobBySocket(active_jobs* table, int job_id, int origin_socket){
     pthread_mutex_lock(&table->mutexTable);
     int idx = HashF(job_id);
