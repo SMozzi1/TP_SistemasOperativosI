@@ -13,12 +13,12 @@ node_res MakeNodeRes(int cpu, int mem, int gpu){
     return new;
 }
 
-node_entry* MakeNodeEntry(char* ip, int port, node_res res, time_t last_seen){
+node_entry* MakeNodeEntry(char* ip, int fd, int port, node_res res, time_t last_seen){
     node_entry* node = malloc(sizeof(struct node_entry));
     assert(node);
     strncpy(node->ip, ip, sizeof(node->ip)- 1);
     node->ip[sizeof(node->ip)-1] = '\0';
-
+    node->fd = -1;
     node->port = port;
     node->res = res;
     node->last_seen = last_seen;
@@ -27,6 +27,7 @@ node_entry* MakeNodeEntry(char* ip, int port, node_res res, time_t last_seen){
     return node;
 }
 
+//Agent has to close node->fd beforehand to avoid fd leaks
 void DestroyNode(node_entry* node){
     free(node);
 }

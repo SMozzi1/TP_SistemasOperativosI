@@ -9,8 +9,12 @@
 #include "resource_manager.h"
 #include "job_table.h"
 #include <time.h>
+#include <sys/socket.h>
 
-//TODO: ReleaseAllsocketfd()
+
+/*this refers to the general pool of resources this node has.
+agent might want to initialize POOL[i]->total with something like CPU_MAX const
+TODO: ask teamate if the pool should be initialized by agent and not here*/
 
 resource_t* MakeResource(char* type, int amount){
     resource_t* pool = malloc(sizeof(struct resource_t));
@@ -23,10 +27,23 @@ resource_t* MakeResource(char* type, int amount){
     return pool;
 
 }
+//init before anything
+void InitPool(int cpu, int mem, int gpu){
+    POOL[0] = MakeResource("cpu", cpu);
+    POOL[1] = MakeResource("mem", mem);
+    POOL[2] = MakeResource("gpu", gpu);
+}
+
 
 void DestroyResource(resource_t* res){
     DestroyQueue(res->pending);
     free(res);
+}
+
+void DestroyPool(void){
+    DestroyResource(POOL[0]);
+    DestroyResource(POOL[1]);
+    DestroyResource(POOL[2]);
 }
 
 resource_t* WhichResource(char* type){
@@ -51,11 +68,15 @@ int Reserve(active_jobs* table, int job_id, int socketfd , char* type, int amoun
         return 0;
     }
     else{
-        granted_t* g = MakeGranted(type, amount);
-        job_entry * job = MakeJob(job_id, socketfd, time(NULL));
+        granted_t* g = MakeGranted(type, amount, "");
+        job_entry * job = FindJob(table, job_id);
+
+        if( job == NULL){
+           job = MakeJob(job_id, socketfd, time(NULL));
+           JobsTableInsert(table,job);
+        }
         AddResource(job,g);
         pool->available = pool->available - amount;
-        JobsTableInsert(table,job);
         
         return 1;
 
@@ -71,22 +92,23 @@ void RetryPending(active_jobs* table, resource_t* res){
             res->pending->last = NULL;
         }
         res->available -= req->amount_requested;
-        granted_t* g = MakeGranted(res->type, req->amount_requested);
-        job_entry * job = MakeJob(req->job_id, req->origin_socket, time(NULL));
+        granted_t* g = MakeGranted(res->type, req->amount_requested,"");
+
+        job_entry * job = FindJob(table,req->job_id);
+        if(job == NULL){
+            job = MakeJob(req->job_id, req->origin_socket, time(NULL));
+            JobsTableInsert(table,job);
+        }
         AddResource(job,g);
-        JobsTableInsert(table,job);
 
-        char msg[64];
-        snprintf(msg, sizeof(msg), "GRANTED %d\n", req->job_id);
-        send(req->origin_socket, msg, strlen(msg), 0);
-
+       char msg[64];
+       snprintf(msg, sizeof(msg), "GRANTED %d\n", req->job_id);
+       send(req->origin_socket, msg, strlen(msg), 0);
 
         DestroyRequest(req);
     }
 
 }
-
-
 
 
 void Release(active_jobs* table ,int job_id){
@@ -101,3 +123,13 @@ void Release(active_jobs* table ,int job_id){
     RemoveJob(table, job_id);
 }
 
+void ReleaseAllsocketfd(active_jobs*table, int fd){
+    job_entry* job = FindJobFD(table, fd);
+
+    while(job != NULL){
+        int job_id = job->job_id;
+        job = job->next_fd;
+        Release(table, job_id);
+    }
+
+}

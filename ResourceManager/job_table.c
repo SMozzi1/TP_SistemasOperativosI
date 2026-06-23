@@ -50,6 +50,7 @@ job_entry* MakeJob(int job_id, int origin_socket, time_t time){
     new->timestamp = time;
     new->resources = NULL; 
     new->next_job = NULL;
+    new->next_fd = NULL;
     
     return new;
     } 
@@ -100,6 +101,9 @@ void JobsTableInit(active_jobs* table){
     for(int i = 0; i < TABLE_SIZE; i++){
         table->job_table[i] = NULL;
     }
+    for(int i = 0; i < MAX_FD; i++){
+        table->fd_index[i] = NULL; 
+    }
        table->active_count = 0;
        pthread_mutex_init(&table->mutexTable, NULL);
 }
@@ -114,6 +118,9 @@ void DestroyJobsTable(active_jobs* table){
             DestroyJob(destroy);
         }
         table->job_table[i] = NULL;
+      }
+      for(int i = 0; i < MAX_FD; i++){
+        table->fd_index[i] = NULL;
       }
         pthread_mutex_destroy(&table->mutexTable);
         table->active_count = 0; 
@@ -133,8 +140,23 @@ void JobsTableInsert(active_jobs* table, job_entry* job){
    int idx = HashF(job->job_id); 
     job->next_job = table->job_table[idx];
     table->job_table[idx] = job;
+
+    if(job->origin_socket >= 0){
+        job->next_fd = table->fd_index[job->origin_socket];
+        table->fd_index[job->origin_socket] = job;
+    }
+
     table->active_count++; 
     pthread_mutex_unlock(&table->mutexTable);
+}
+
+//returns first element of the list with matching fd. Else returns NULL
+job_entry* FindJobFD(active_jobs* table, int fd){
+    if(fd < 0 || fd >= MAX_FD){
+        printf("job not on the table\n");
+        return NULL;
+    }
+    return table->fd_index[fd];
 }
 
 
@@ -152,6 +174,27 @@ job_entry* FindJob(active_jobs* table, int job_id){
     return look;
    }
     
+
+
+//not thread safe by itself
+void RemoveJobFD(active_jobs* table, int fd, int job_id){
+    if (fd < 0 || fd >= MAX_FD ) return;
+    job_entry* prev = NULL;
+    job_entry* current = table->fd_index[fd];
+
+    while(current != NULL && current->job_id != job_id){
+        prev = current;
+        current = current->next_fd;
+    }
+
+    if(current == NULL) return; //no estaba
+    
+    if(prev == NULL) // era el primero
+        table->fd_index[fd] = current->next_fd;
+    else
+        prev->next_fd = current->next_fd;
+}
+
 void RemoveJob(active_jobs* table, int job_id){
     pthread_mutex_lock(&table->mutexTable);
      int idx = HashF(job_id);
@@ -167,6 +210,7 @@ void RemoveJob(active_jobs* table, int job_id){
     else
         prev->next_job = current->next_job;
     
+    RemoveJobFD(table, current->origin_socket, job_id);
     table->active_count--;
     DestroyJob(current);
     pthread_mutex_unlock(&table->mutexTable);
@@ -295,10 +339,10 @@ void PrintTable(active_jobs* table){
 // }
 
 
-
-job_entry* BuscarJobPorFD(int fd) {
+//legacy
+job_entry* BuscarJobPorFD(active_jobs* table, int fd) {
     for (int i = 0; i < TABLE_SIZE; i++) {
-        job_entry* current = table_ourjobs.job_table[i];
+        job_entry* current = table->job_table[i];
         while (current != NULL) {
             if (current->origin_socket == fd) {
                 return current;

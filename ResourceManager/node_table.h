@@ -17,6 +17,7 @@ typedef struct node_res{
 
 typedef struct node_entry{
     char ip[50];
+    int fd;
     int port;
     node_res res;
     time_t last_seen;
@@ -34,7 +35,7 @@ typedef struct node_table{
 node_res MakeNodeRes(int cpu, int mem, int gpu);
 
 //node entry constructor
-node_entry* MakeNodeEntry(char* ip, int port, node_res res, time_t last_seen);
+node_entry* MakeNodeEntry(char* ip, int fd, int port, node_res res, time_t last_seen);
 void DestroyNode(node_entry* node);
 void DestroyNodeList(node_entry * node);
 void NodeTableInit(node_table* table);

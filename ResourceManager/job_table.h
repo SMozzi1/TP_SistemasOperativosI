@@ -8,7 +8,7 @@
 #include <pthread.h>
 
 #define TABLE_SIZE 256
-
+#define MAX_FD 1024
 typedef struct granted_t {
     char type[8];//gpu, mem, cpu
     int amount;   //reserved amount
@@ -27,11 +27,25 @@ typedef struct job_entry {
     granted_t* resources;
     granted_t* next_req; //Puntero aux que se mueve de acuerdo a los pedidos de los otros 
     struct job_entry* next_job; //colisiones por encadenamiento.
-
+    struct job_entry* next_fd; //registro de jobs con mismo fd
 } job_entry; 
 
-typedef struct active_jobs {
+
+typedef struct active_jobs {job_entry* BuscarJobPorFD(active_jobs table,int fd) {
+    for (int i = 0; i < TABLE_SIZE; i++) {
+        job_entry* current = table->job_table[i];
+        while (current != NULL) {
+            if (current->origin_socket == fd) {
+                return current;
+            }
+            current = current->next_job;
+        }
+    }
+    return NULL; // No se encontró ningún job con el fd dado
+}
    job_entry* job_table[TABLE_SIZE];
+   job_entry* fd_index[MAX_FD];
+   
    int active_count; //amount of total jobs in the table
    pthread_mutex_t mutexTable; 
 } active_jobs;
