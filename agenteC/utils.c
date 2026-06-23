@@ -314,7 +314,7 @@ char* obtener_string_nodos(job_entry* table[]) {
                     }
                 }
 
-=                // If it doesnt exist, we create a new entry for this remote node.
+               // If it doesnt exist, we create a new entry for this remote node.
                 if (found_idx == -1) {
                     if (node_count < 128) {
                         strncpy(unique_nodes[node_count].ip, res->dest_ip, sizeof(unique_nodes[node_count].ip) - 1);
