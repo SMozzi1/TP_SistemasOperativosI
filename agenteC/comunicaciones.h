@@ -17,51 +17,72 @@
 // Max capacity for the stream reconstruction buffer
 #define BUFFER_MAX 2048
 
-//Socket-acummulator buffer. Needed because TCP doesnt guarantee that a message
-//will be delivered completely with only one recv().
+/*
+    Manages the partial data accumulation for non-blocking stream sockets.
+    buffer: Local storage for incoming data chunks before a newline is detected.
+    accumulated_bytes: Current number of bytes stored in the buffer.
+*/
 typedef struct text_buffer{
     char buffer[512];
     int accumulated_bytes;
 } ConnectionState;
 
 
-// Functions to parse and receive messages from others.
-int get_token(char *instruction, char **token_array, int max_tokens);   
-void clear_connection_buffer(int fd);
 /*
- *  Reads from a non-blocking socket piece by piece until a newline character is found.
- *  fd The socket file descriptor to read from (e.g., erlangfd).
- *  output_line Buffer where the complete line will be copied once fully assembled.
- *  1 if the line is complete, 0 if more data is needed, -1 on error/disconnection.
+    Splits a string into an array of tokens based on whitespace.
+    Returns the number of tokens successfully parsed.
+ */
+int get_token(char *instruction, char **token_array, int max_tokens);   
+
+/*
+    Resets the internal state buffer associated with a specific file descriptor.
+    Should be called upon client disconnection to prevent data leakage or 
+    leftover artifacts in future connections using the same fd.
+*/
+void clear_connection_buffer(int fd);
+
+
+/*
+    Reads from a non-blocking socket piece by piece until a newline character is found.
+    fd: The socket file descriptor to read from.
+    output_line: Buffer where the complete line will be copied once fully assembled.
+    Returns 1 if the line is complete, 0 if more data is needed, -1 on error/disconnection.
  */
 int read_until_newline(int fd, char* output_line);
 
 
-
+/*
+    Initiates a resource request workflow for a given job.
+    Traverses the job's resource list and prepares the necessary networking 
+    requests to peer nodes.
+*/
 void ask_for_next_resource(job_entry* job);
 
 
 
-// Functions to communicate with the fds and Erlang.
+/*
+    Processes incoming TCP messages from remote nodes and dispatches them.
+    Identifies whether the message is a request (RESERVE/RELEASE) or a response 
+    (GRANTED/DENIED) and invokes the corresponding business logic.
+*/
 void client_to_myserver(int fd_actual, char *instruction);
 
-
-/**
-  Sends a formatted response back to Erlang safely using MSG_NOSIGNAL.
-  The socket connected to the Erlang node.
-  estado The status string (e.g., "granted", "rejected", "waiting").
-  job_id The identifier of the job being processed.
+/*
+    Sends a formatted response back to the Erlang scheduler safely using MSG_NOSIGNAL.
+    instruction: The command or status type (e.g., "GRANTED").
+    job_id: The unique identifier of the job being processed.
  */
 void C_to_erlang(const char *instruction, const char *job_id);
 
 
 
-/**
- *  Parses instructions coming from Erlang and triggers the appropriate action.
- *  erlangfd The socket connected to the Erlang node.
- *  instruction The raw null-terminated string received from the socket.
+/*
+    Parses instructions received from the Erlang scheduler and triggers local actions.
+    instruction: The raw string command sent by the Erlang process.
+    timefd: The current timestamp to be associated with the triggered action.
  */
 void erlang_to_C(char* instruction, time_t timefd);
+
 
 
 

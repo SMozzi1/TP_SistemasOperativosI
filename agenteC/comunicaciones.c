@@ -1,65 +1,16 @@
 //#define _GNU_SOURCE //actualmente compilamos con -D_GNU_SOURC, si no estuviera, se pondria esta linea
-/*
- * comunicaciones.c
- *
- * Communications module for the Resource Manager Agent.
- * Handles all networking logic: reading from non-blocking sockets,
- * message parsing, and dispatching to Erlang or remote nodes.
- *
- * Fixes applied over the original draft:
- *  - get_token: now operates on a local copy so the
- *    original buffer is never destroyed. Callers no longer reference
- *    the undeclared variable `mensaje` or the undeclared array `token[]`.
- *  - C_to_erlang: signature corrected to (int, const char*, const char*).
- *  - myserver_to_client: signature corrected; now receives erlangfd and epollfd.
- *  - erlang_to_C: call to myserver_to_client fixed; the @host:res:amount
- *    list in JOB_REQUEST is now parsed correctly.
- *  - client_to_myserver: token[] -> tokens[], mensaje -> instruction (local copy).
- *  - ANNOUNCE format without IP (image 2): IP is extracted from recvfrom().
- *  - Job timeouts implemented with a dedicated timerfd.
- *  - Consistent naming: socket_UDP instead of udp_socket.
- */
-
 #include "comunicaciones.h"
 #include "utils.h"
 
-/* ═══════════════════════════════════════════════════════════════════
- *  Global variables
- * ═══════════════════════════════════════════════════════════════════ */
+
 
 ConnectionState connections[MAX_FDS];
 
-/**
- * we use the extern since the table is going to be initialized in the setup epoll
- */
 
- //Comentadas pero estan el globals.h
-// extern active_jobs table_nodes;
-//A esta 
-// extern active_jobs table_clients;
-
-// extern int cpu_available;
-// extern int mem_available;
-// extern int gpu_available;
-
-// fifo_queue_t cpu_queue = {NULL, NULL};
-// fifo_queue_t mem_queue = {NULL, NULL};
-// fifo_queue_t gpu_queue = {NULL, NULL};
-
-//extern pthread_mutex_t mutex_resources;
-
-
-
-
-/*
- * Splits `instruction` into tokens delimited by space, '\n', or '\r'.
- * WARNING: modifies the string in place (uses strtok_r internally).
- * Returns the number of tokens found (at most max_tokens).
- */
 int get_token(char *instruction, char **token_array, int max_tokens) {
     int i = 0;
     char *saveptr;
-
+    //strtok_r is thread safe 
     char *t = strtok_r(instruction, " \n\r", &saveptr);
     while (t != NULL && i < max_tokens) {
         token_array[i++] = t;
@@ -74,18 +25,16 @@ void clear_connection_buffer(int fd) {
     }
 }
 
-/*
- * Reads bytes from a non-blocking socket and accumulates them until
- * a newline character '\n' is found.
- *
- * Returns:
- *   1  -> complete line ready in output_line
- *   0  -> partial data received, keep waiting
- *  -1  -> peer disconnected or critical error
- */
+
 int read_until_newline(int fd, char *output_line) {
     if (fd < 0 || fd >= MAX_FDS) return -1;
 
+
+    /* storage: Pointer to the persistent character buffer assigned to this specific file descriptor.
+        It holds the raw data stream until a full, newline-terminated message is detected.
+       acc: Pointer to the counter tracking how many bytes are currently held in the 'storage' buffer.
+        It allows the function to know where to append new data and how much remains after a line is extracted.
+    */
     char  *storage = connections[fd].buffer;
     int   *acc     = &connections[fd].accumulated_bytes;
 
@@ -110,8 +59,10 @@ int read_until_newline(int fd, char *output_line) {
     memcpy(&storage[*acc], temp, n);
     *acc += n;
     storage[*acc] = '\0';
-
+    /* Searches for the first newline character in the accumulated buffer. */
     char *nl = strchr(storage, '\n');
+
+    /* If a complete line is detected (nl != NULL). */
     if (nl != NULL) {
         int line_len = (nl - storage) + 1;
         memcpy(output_line, storage, line_len);
@@ -121,6 +72,7 @@ int read_until_newline(int fd, char *output_line) {
         if (remaining > 0) {
             memmove(storage, &storage[line_len], remaining);
         }
+        /* Updates the accumulator to reflect the remaining bytes and signifies success. */
         *acc = remaining;
         return 1;
     }
@@ -133,7 +85,7 @@ int read_until_newline(int fd, char *output_line) {
 
 void ask_for_next_resource(job_entry* job)
 {
-    // CASO BASE: Si ya no hay más recursos en la lista, terminamos con éxito
+    // If there are no more resources on the list, we have successfully completed our task.
     if (job->next_req == NULL)
     {
         job->next_req = NULL;
@@ -143,18 +95,20 @@ void ask_for_next_resource(job_entry* job)
         return;
 
     }
+    //We move to the other resource we want to ask.
     else
     {
-        //creamos un socket para mandar mensajes 
+       
+        //We create a socket to send messages, this message is gonna be processed by the loop in agente.c
         int remote_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
 
         if (remote_fd < 0) {
             perror("[ERROR] pedir_elementos: socket()");
             return;
         }
+        
         job->origin_socket = remote_fd;
-        //Cada recurso tendra un id de donde viene, el puerto se tiene que buscar de la tabla,
-        //Si no esta entonces tengo que hacer job_rejected
+        
         struct sockaddr_in remote_addr;
         memset(&remote_addr, 0, sizeof(remote_addr));
         remote_addr.sin_family = AF_INET;
@@ -168,8 +122,7 @@ void ask_for_next_resource(job_entry* job)
             return;
         }
         
-        // Registramos en epoll. 
-        // EPOLLOUT se disparará en cuanto la conexión TCP se complete con éxito.
+        // Resister the socket in epoll;
         struct epoll_event ev;
         ev.events  = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLONESHOT;
         ev.data.fd = remote_fd;
@@ -179,8 +132,9 @@ void ask_for_next_resource(job_entry* job)
             return;
         }
         
-        //Se crea un socket con EPOLLOUT que reaccionara cuando la conexion este lista para mandar el mensaje de reserve
-        //el send esta en la funcion event_loop, cuando se pueda mandar el mensaje de reserve, se manda y se cambia el epoll a EPOLLIN para esperar la respuesta del nodo remoto
+        //Creates an epoll event with EPOLLOUT, which will be triggered when the socket 
+        //is ready to transmit data. This is used to initiate the resource reservation 
+        //flow by sending the 'RESERVE' message.
     }
 }
 
@@ -208,7 +162,7 @@ void C_to_erlang(const char *instruction, const char *job_id) {
 }
 
 
-void client_to_myserver(int fd_actual, char *instruction) {    
+void client_to_myserver(int actual_fd, char *instruction) {    
     /* Work on a copy to avoid destroying the original buffer */
     char copy[LENG];
     strncpy(copy, instruction, sizeof(copy) - 1);
@@ -226,14 +180,15 @@ void client_to_myserver(int fd_actual, char *instruction) {
         char *resource   = tokens[2];
         int   amount     = atoi(tokens[3]);
         int   job_id     = atoi(job_id_str);
-        //Enqueue ya ejecuta reserve_elements
-        enqueue_jobs(resource, job_id, amount, fd_actual);
-        //reserve_elements();
+        
+        //every time we add a job to the queue it tryes to reserve_elements
+        enqueue_jobs(resource, job_id, amount, actual_fd);
+        
     }
     /* ── RELEASE: the remote node is freeing a resource we granted it ── */
     else if (!strcmp(tokens[0], "RELEASE")) {
-        if (num >= 2) printf("[SERVER] RELEASE job %s en fd=%d\n", tokens[1], fd_actual);
-            release_client_by_fd(fd_actual);   // la clave es el socket, no el job_id
+        if (num >= 2) printf("[SERVER] RELEASE job %s en fd=%d\n", tokens[1], actual_fd);
+            release_client_by_fd(actual_fd);   
     }
     /* ── GRANTED / DENIED: response to a RESERVE we sent ─────────────── */
     else if (!strcmp(tokens[0], "GRANTED")) {
@@ -241,59 +196,38 @@ void client_to_myserver(int fd_actual, char *instruction) {
         int job_id = atoi(tokens[1]);
         job_entry* job = FindJob(&table_ourjobs, job_id);
         if (job != NULL && job->next_req != NULL) {
-            original_socket(job, fd_actual);
+            original_socket(job, actual_fd);
             job->next_req = job->next_req->next;
             ask_for_next_resource(job);
         }
     }
     else
-{
-    if (num < 2) {
-        fprintf(stderr, "[WARN] Mensaje desconocido o malformado: %s\n", instruction);
-        return;
-    }
-    int job_id = atoi(tokens[1]);
-    job_entry* job = FindJob(&table_ourjobs, job_id);
-    if (job != NULL) {
-        close(fd_actual);
-        release_resources(job);
+    {
+        /*This section acts as a recovery routine that, in the event of an unknown message or a rejection, 
+        closes the connection, releases the resources locked by the job, notifies the Erlang scheduler of the failure, 
+        and removes the job from the local table.*/
+        
+        if (num < 2) {
+            fprintf(stderr, "[WARN] Mensaje desconocido o malformado: %s\n", instruction);
+            return;
+        }
 
-        char id_str[16];
-        snprintf(id_str, sizeof(id_str), "%d", job_id);
-        C_to_erlang("rejected", id_str);
-        RemoveJob(&table_ourjobs, job_id);
+        int job_id = atoi(tokens[1]);
+        job_entry* job = FindJob(&table_ourjobs, job_id);
+        if (job != NULL) {
+            close(actual_fd);
+            release_resources(job);
+
+            char id_str[16];
+            snprintf(id_str, sizeof(id_str), "%d", job_id);
+            C_to_erlang("rejected", id_str);
+            RemoveJob(&table_ourjobs, job_id);
+        }
     }
 }
-}
 
 
 
-
-
-/*
- * Opens a non-blocking TCP connection to a remote node, registers it
- * in epoll, and sends the given instruction (RESERVE or RELEASE).
- *
- * erlangfd -> used to forward errors to Erlang if the job is missing
- * epollfd_local  -> shared epoll instance
- * instruction    -> "reserve <job_id>" or "release <job_id>"
- *
- * The destination IP, port, resource name, and amount are read from the
- * job_entry that must have been inserted into table_nodes by erlang_to_C().
- */
-
-
-
- //Este paso al final puede que lo haga con las funcione definidas en utils con 
-
-
-/*
- * Processes a command received from the Erlang scheduler (§4.2):
- *
- *   JOB_REQUEST <job_id> [@host:res:amount ...]
- *   JOB_RELEASE <job_id>
- *   JOB_STATUS  <job_id>   (responds WAITING for now)
- */
 void erlang_to_C(char *instruction, time_t timer) {
 
     char copy[BUFFER_MAX];
