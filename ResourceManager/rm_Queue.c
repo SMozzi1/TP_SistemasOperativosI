@@ -27,7 +27,7 @@ void DestroyRequest(p_request_t* request){
 }
 
 
-
+//queue constructor
 p_queue_t* MakeQueue(){
     p_queue_t* NewQueue = malloc(sizeof(p_queue_t));
     assert(NewQueue);
@@ -40,42 +40,49 @@ p_queue_t* MakeQueue(){
     return  NewQueue;
 }
 
-//IsEmpty IS NOT thread safe by itself. Use it wisely between mutexes.
+/*checks if the queue is empty
+- IsEmpty IS NOT thread safe by itself. It has to 
+be called between mutexes.*/
+
 int IsEmpty(p_queue_t* resource_queue){
     int result = (resource_queue->first == NULL && resource_queue->last == NULL);
     return result;
 }
 
-
+/*puhses a pending request into the queue*/
 void EnqueueRequest( p_queue_t* resource_queue , p_request_t* request){
 
     pthread_mutex_lock(&resource_queue->mutexQueue);
 
-        if(IsEmpty(resource_queue)){ 
+        if(IsEmpty(resource_queue)){ /*first element in the queue case*/
                 resource_queue->first = request;
                 resource_queue->last = request;
             }
         else{ 
-              resource_queue->last->next_req = request;
+              resource_queue->last->next_req = request; 
               resource_queue->last = request;
 
              }
 
-     pthread_cond_broadcast(&resource_queue->not_empty); //signal new elements in the queue
+     pthread_cond_broadcast(&resource_queue->not_empty); /*signal new elements in the queue*/
      pthread_mutex_unlock(&resource_queue->mutexQueue);
     }
 
 
 //returns first element of the queue without freeing the element.
+
 p_request_t* DequeueRequest(p_queue_t* resource_queue){
     pthread_mutex_lock(&resource_queue->mutexQueue);
-               if(IsEmpty(resource_queue)){
+
+               if(IsEmpty(resource_queue)){/*wait for new elements*/
                   while(resource_queue->first == NULL && !resource_queue->stop){
 
                        pthread_cond_wait(&resource_queue->not_empty,
                                          &resource_queue->mutexQueue); 
-                    }   
-                       //we finished fr fr
+                    }  
+
+                    /*condition to check if we actually stopped 
+                    the queue and we're not just waiting for new elements*/
                     if(resource_queue->first == NULL && resource_queue->stop){ 
                            pthread_mutex_unlock(&resource_queue->mutexQueue);
                            return NULL;}
@@ -84,7 +91,7 @@ p_request_t* DequeueRequest(p_queue_t* resource_queue){
                p_request_t* result = resource_queue->first;
                resource_queue->first = result->next_req;
 
-               if(resource_queue->first == NULL){ //we dequeued and now the queue is empty.
+               if(resource_queue->first == NULL){ /*we dequeued and now the queue is empty.*/
                    resource_queue->last = NULL; }
 
                result->next_req = NULL;
@@ -92,13 +99,13 @@ p_request_t* DequeueRequest(p_queue_t* resource_queue){
                return result;
                }
 
-//actually frees the first element of the queue. DequeueRequest already handles thread safety.
+/*Frees the first element of the queue. DequeueRequest already handles thread safety.*/
 void DiscardRequest(p_queue_t* resource_queue){
        DestroyRequest(DequeueRequest(resource_queue));
        
 }
 
-/*queue cant tell the difference between an empty queue waiting for new elements,and one that
+/*queue can't tell the difference between an empty queue waiting for new elements,and one that
  has stopped and ceased operations by itself. So we make a function that switches the stop val in the queue struct.*/
 
 void StopQueue(p_queue_t* resource_queue){
@@ -106,8 +113,9 @@ void StopQueue(p_queue_t* resource_queue){
     resource_queue->stop = 1;
     pthread_cond_broadcast(&resource_queue->not_empty);
     pthread_mutex_unlock(&resource_queue->mutexQueue);
-    }
+}
 
+/*Frees the queue*/
 void DestroyQueue(p_queue_t* resource_queue){
      p_request_t* delete;
 
@@ -121,7 +129,7 @@ void DestroyQueue(p_queue_t* resource_queue){
     free(resource_queue);
 }
 
-
+/*prints Queue*/
 void PrintQueue(p_queue_t* resource_queue){
 
   pthread_mutex_lock(&resource_queue->mutexQueue);
@@ -138,7 +146,7 @@ void PrintQueue(p_queue_t* resource_queue){
 
 
 
-/* asume que el caller ya tiene q->mutexQueue tomado */
+/*unsafe version of DequeueRequest. Assumes calling process already has a lock*/
 p_request_t* DequeueRequest_locked(p_queue_t* q) {
     p_request_t* r = q->first;
     if (r == NULL) return NULL;
