@@ -15,6 +15,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <fcntl.h>
+#include <ifaddrs.h>
 #include "comunicaciones.h"
 
 
@@ -57,4 +58,5 @@ char* obtener_string_nodos(job_entry* job_table[]);
 void release_client_by_fd(int fd);
 void drain_queue(p_queue_t* q, int* avail, const char* type);
 void handle_outbound_disconnect(int fd);
+
 #endif /* UTILS_H */

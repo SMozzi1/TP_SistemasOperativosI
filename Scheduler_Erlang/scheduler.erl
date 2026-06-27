@@ -179,17 +179,19 @@ job_loop(CoordPid, JobId, Resources, Message) ->
 job_generator(JobId, CoordPid) ->
     CoordPid ! {get_nodes, self()},
     receive
-        {nodes, Nodes} -> 
-            %% First, it parsed the Nods from the nodes received
-            Parsed_Nodes = parse_nodes(Nodes),
-
-            Resources = make_resources_for_job(Parsed_Nodes),
-            spawn(?MODULE, job, [CoordPid, JobId, Resources]),
-
-            timer:sleep(?GENERATOR_LOOP_TIME),
-
-            %% After this, it recalls itself, with a increase in the JobId
-            job_generator(JobId + 1 , CoordPid)
+        {nodes, Nodes} ->
+            case parse_nodes(Nodes) of
+                [] ->
+                    %% Todavía no hay nodos conocidos: no generamos job,
+                    %% reintentamos más tarde con el mismo JobId.
+                    timer:sleep(?GENERATOR_LOOP_TIME),
+                    job_generator(JobId, CoordPid);
+                Parsed_Nodes ->
+                    Resources = make_resources_for_job(Parsed_Nodes),
+                    spawn(?MODULE, job, [CoordPid, JobId, Resources]),
+                    timer:sleep(?GENERATOR_LOOP_TIME),
+                    job_generator(JobId + 1, CoordPid)
+            end
     end.
 
 

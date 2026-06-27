@@ -63,10 +63,16 @@ append_if_not_zero(Base, Resource) ->
 
 %% @doc Parses the full nodes string from C into a list of {IP, Port, Resources}
 %% @spec parse_nodes(string()) -> list()
+%parse_nodes(Data) ->
+%    NodeStrings = string:split(Data, ";", all),
+%    lists:map(fun parse_node/1, NodeStrings).
 parse_nodes(Data) ->
-    NodeStrings = string:split(Data, ";", all),
-    lists:map(fun parse_node/1, NodeStrings).
-
+    case string:trim(Data) of
+        ""    -> [];
+        Clean ->
+            NodeStrings = string:split(Clean, ";", all),
+            lists:map(fun parse_node/1, NodeStrings)
+    end.
 
 %% @doc Parses a single node string into {IP, Port, Resources}
 %% @spec parse_node(string()) -> {string(), integer(), list()}

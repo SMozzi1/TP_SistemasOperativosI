@@ -228,9 +228,9 @@ static void* event_loop(void *arg) {
                 bcast_addr.sin_family      = AF_INET;
                 bcast_addr.sin_port        = htons(BROADCAST_PORT);
                 // comento esta linea ya que para testear en docker fijo una ip de la red virtual pero es la linea correspondiente
-                // bcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+                bcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
                 //
-                bcast_addr.sin_addr.s_addr = inet_addr("10.5.255.255");
+                //bcast_addr.sin_addr.s_addr = inet_addr("10.5.255.255");
                 ssize_t sent = sendto(socket_UDP, msg, strlen(msg), 0,(struct sockaddr *)&bcast_addr, sizeof(bcast_addr));
                 if (sent < 0) log_error("[UDP BCAST] sendto failed");
                 else printf("[UDP BCAST] Announcement sent: %s\n", msg);
@@ -273,6 +273,7 @@ static void* event_loop(void *arg) {
                 //We get the ip 
                 char sender_ip[INET_ADDRSTRLEN];
                 inet_ntop(AF_INET, &(sender.sin_addr), sender_ip, sizeof(sender_ip));
+                
 
                 int nodo_puerto = atoi(tokens[1]);
                 

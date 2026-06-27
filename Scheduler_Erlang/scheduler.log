@@ -224,3 +224,93 @@
 
 [{{2026,6,27},{16,3,21}}] JOB "all_jobs_cancelled" connection_closed
 
+[{{2026,6,27},{22,21,13}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,27},{22,21,29}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,27},{22,21,33}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,27},{22,21,34}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,27},{22,21,35}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,27},{22,35,29}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,27},{22,35,41}}] JOB "all_jobs_cancelled" connection_closed
+
+[{{2026,6,27},{22,38,23}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,27},{22,38,23}}] JOB 1001 granted
+
+[{{2026,6,27},{22,38,25}}] JOB 1002 granted
+
+[{{2026,6,27},{22,38,33}}] JOB 1005 granted
+
+[{{2026,6,27},{22,38,33}}] JOB 1003 granted
+
+[{{2026,6,27},{22,38,35}}] JOB 1009 granted
+
+[{{2026,6,27},{22,38,42}}] JOB 1013 granted
+
+[{{2026,6,27},{22,38,42}}] JOB 1010 granted
+
+[{{2026,6,27},{22,38,43}}] JOB 1014 granted
+
+[{{2026,6,27},{22,38,45}}] JOB 1015 granted
+
+[{{2026,6,27},{22,38,52}}] JOB 1016 granted
+
+[{{2026,6,27},{22,38,54}}] JOB 1019 granted
+
+[{{2026,6,27},{22,38,55}}] JOB 1018 granted
+
+[{{2026,6,27},{22,38,55}}] JOB 1006 granted
+
+[{{2026,6,27},{22,38,55}}] JOB 1004 granted
+
+[{{2026,6,27},{22,38,58}}] JOB 1022 granted
+
+[{{2026,6,27},{22,38,58}}] JOB 1008 granted
+
+[{{2026,6,27},{22,38,58}}] JOB 1011 granted
+
+[{{2026,6,27},{22,38,58}}] JOB 1007 granted
+
+[{{2026,6,27},{22,38,59}}] JOB 1024 granted
+
+[{{2026,6,27},{22,39,0}}] JOB 1025 granted
+
+[{{2026,6,27},{22,39,2}}] JOB 1026 granted
+
+[{{2026,6,27},{22,39,3}}] JOB 1027 granted
+
+[{{2026,6,27},{22,39,4}}] JOB 1012 granted
+
+[{{2026,6,27},{22,39,5}}] JOB 1028 granted
+
+[{{2026,6,27},{22,39,6}}] JOB 1029 granted
+
+[{{2026,6,27},{22,39,8}}] JOB 1030 granted
+
+[{{2026,6,27},{22,39,9}}] JOB 1017 granted
+
+[{{2026,6,27},{22,39,9}}] JOB 1023 granted
+
+[{{2026,6,27},{22,39,9}}] JOB 1020 granted
+
+[{{2026,6,27},{22,39,9}}] JOB 1031 granted
+
+[{{2026,6,27},{22,39,13}}] JOB 1021 granted
+
+[{{2026,6,27},{23,5,41}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,27},{23,14,29}}] --- COORDINATOR STARTED on port 4200 --- 
+
+[{{2026,6,27},{23,14,29}}] JOB 1001 granted
+
+[{{2026,6,27},{23,14,30}}] JOB 1002 granted
+
+[{{2026,6,27},{23,14,41}}] JOB 1008 granted
+
+[{{2026,6,27},{23,14,43}}] JOB "all_jobs_cancelled" connection_closed
+
