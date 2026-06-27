@@ -36,6 +36,7 @@ void fatal_error(const char *msg);
 typedef struct times{
     int broadcast_timer_fd;   /* UDP broadcast timer  (fires every 5 s) */
     int timeout_timer_fd;     /* Job timeout checker  (fires every 5 s) */
+    int port;
 } worker_args_t;
 
 int make_timer(int initial_sec, int interval_sec);

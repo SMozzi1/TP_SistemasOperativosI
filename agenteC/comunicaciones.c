@@ -25,7 +25,6 @@ void clear_connection_buffer(int fd) {
     }
 }
 
-
 int read_until_newline(int fd, char *output_line) {
     if (fd < 0 || fd >= MAX_FDS) return -1;
 

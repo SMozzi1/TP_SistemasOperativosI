@@ -28,7 +28,7 @@
     - socket_erlang: restricted to localhost (127.0.0.1) for local communication.
     - socket_UDP: configured for broadcasting node announcements.
  */
-static void initialize_listen_sockets(void);
+static void initialize_listen_sockets(int port);
 
 
 /*
@@ -54,7 +54,7 @@ static void* event_loop(void *arg);
     4. Initializes high-resolution timers for broadcasting and timeout checks.
     5. Spawns NUM_WORKERS worker threads to process events concurrently.
 */
-void setup_epoll(void);
+void setup_epoll(int port);
 
 
 

@@ -23,6 +23,7 @@
 #include "comunicaciones.h"
 #include "agente.h"
 
+#include <arpa/inet.h>
 
 
 // Inventory of available local resources.
@@ -50,7 +51,6 @@ active_jobs table_clients;
 
 #define BROADCAST_PORT 12529 
 //Need manualy be changed
-#define ANNOUNCEMENT_MSG "ANNOUNCE 4200 cpu:4 mem:8192 gpu:1"
 
 int JOB_TIMEOUT_SEC = 30;
 int NODE_TIMEOUT_SEC = 15;
@@ -61,7 +61,7 @@ int socket_UDP;
 
 
 //Socket initialization
-static void initialize_listen_sockets(void) {
+static void initialize_listen_sockets(int port) {
     struct sockaddr_in server_addr, erlang_addr, udp_addr;
     //Works as a boolean to activate an socket option
     int opt = 1;
@@ -90,7 +90,7 @@ static void initialize_listen_sockets(void) {
     /* socket_server: listens on ALL interfaces, port PORT */
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family      = AF_INET;
-    server_addr.sin_port        = htons(PORT);
+    server_addr.sin_port        = htons(port);
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
     /*
@@ -100,7 +100,7 @@ static void initialize_listen_sockets(void) {
      */
     memset(&erlang_addr, 0, sizeof(erlang_addr));
     erlang_addr.sin_family      = AF_INET;
-    erlang_addr.sin_port        = htons(PORT);
+    erlang_addr.sin_port        = htons(port);
     erlang_addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
     /* socket_UDP: receives broadcasts on BROADCAST_PORT */
@@ -127,6 +127,7 @@ static void initialize_listen_sockets(void) {
 //Event loop (executed by every threads)
 static void* event_loop(void *arg) {
     worker_args_t     *args   = (worker_args_t *)arg;
+    int port = args->port;
     struct epoll_event events[MAX_EVENTS];
 
     while (1) {
@@ -206,14 +207,15 @@ static void* event_loop(void *arg) {
                 uint64_t exp;
                 /*  Must read the timer fd to clear its readable state;
                     otherwise epoll keeps waking us up in a busy loop.  */
-                if (read(fd, &exp, sizeof(exp)) < 0) {
+                if (read(fd, &exp, sizeof(exp)) < 0 && errno != EAGAIN) {
                     log_error("read broadcast timer");
+                    continue;
                 }
 
                 //We send a message whith our port and elements
                 char msg[126];
                 pthread_mutex_lock(&mutex_resources);
-                snprintf(msg, sizeof(msg), "ANNOUNCE %d cpu:%d mem:%d gpu:%d\n", PORT, cpu_available, mem_available, gpu_available);
+                snprintf(msg, sizeof(msg), "ANNOUNCE %d cpu:%d mem:%d gpu:%d\n", port, cpu_available, mem_available, gpu_available);
                 pthread_mutex_unlock(&mutex_resources);
 
                 /*
@@ -225,8 +227,10 @@ static void* event_loop(void *arg) {
                 memset(&bcast_addr, 0, sizeof(bcast_addr));
                 bcast_addr.sin_family      = AF_INET;
                 bcast_addr.sin_port        = htons(BROADCAST_PORT);
-                bcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
-
+                // comento esta linea ya que para testear en docker fijo una ip de la red virtual pero es la linea correspondiente
+                // bcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+                //
+                bcast_addr.sin_addr.s_addr = inet_addr("10.5.255.255");
                 ssize_t sent = sendto(socket_UDP, msg, strlen(msg), 0,(struct sockaddr *)&bcast_addr, sizeof(bcast_addr));
                 if (sent < 0) log_error("[UDP BCAST] sendto failed");
                 else printf("[UDP BCAST] Announcement sent: %s\n", msg);
@@ -236,8 +240,9 @@ static void* event_loop(void *arg) {
             /*Reads the timer file descriptor to clear its state and invokes timeout checks for both remote node jobs and local jobs.*/
             else if (fd == args->timeout_timer_fd) { 
                 uint64_t exp;
-                if (read(fd, &exp, sizeof(exp)) < 0) {
+                if (read(fd, &exp, sizeof(exp)) < 0 && errno != EAGAIN) {
                     log_error("read timeout timer");
+                    continue;
                 }
                 check_job_timeouts(&table_nodes, NODE_TIMEOUT_SEC);
                 check_job_timeouts(&table_ourjobs, JOB_TIMEOUT_SEC);
@@ -246,7 +251,7 @@ static void* event_loop(void *arg) {
             /* ── E: incoming UDP datagram from another node ─────────── */
             //We get the message ANNOUNCE and keep the Node in table_nodes
             else if (fd == socket_UDP) {
-
+                
                 char buf[BUFFER_LEN];
                 struct sockaddr_in sender;
                 socklen_t slen = sizeof(sender);
@@ -331,6 +336,9 @@ static void* event_loop(void *arg) {
                 (If it already existed, we directly modify its resources using the pointer provided by FindJob)*/
                 if (is_new) {
                     JobsTableInsert(&table_nodes, nodo);
+                    printf("[UDP RECEIVE] ¡Nuevo nodo descubierto en la red!\n");
+                } else {
+                    printf("[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla.\n");
                 }
                 
             }
@@ -431,7 +439,7 @@ static void* event_loop(void *arg) {
 
 
 
-void setup_epoll(void) {
+void setup_epoll(int port) {
     /* Ignore SIGPIPE: if a peer closes while we are writing, send()
      * returns -1 with errno=EPIPE instead of killing the process.  */
     signal(SIGPIPE, SIG_IGN);
@@ -446,20 +454,20 @@ void setup_epoll(void) {
     if (epollfd < 0) fatal_error("epoll_create1 failed");
 
     /* Open and bind the three network endpoints */
-    initialize_listen_sockets();
+    initialize_listen_sockets(port);
 
     /* Register listening sockets in epoll.
      * EPOLLEXCLUSIVE: only ONE thread is woken up per incoming event.
      * This prevents the "thundering herd" problem without a global lock. */
     struct epoll_event ev_s, ev_e, ev_u;
 
-    ev_s.events  = EPOLLIN;
+    ev_s.events  = EPOLLIN | EPOLLEXCLUSIVE;
     ev_s.data.fd = socket_server;
 
-    ev_e.events  = EPOLLIN;
+    ev_e.events  = EPOLLIN | EPOLLEXCLUSIVE;
     ev_e.data.fd = socket_erlang;
 
-    ev_u.events  = EPOLLIN;   
+    ev_u.events  = EPOLLIN | EPOLLEXCLUSIVE;   
     ev_u.data.fd = socket_UDP;
 
     if (epoll_ctl(epollfd, EPOLL_CTL_ADD, socket_server, &ev_s) < 0 ||
@@ -479,6 +487,7 @@ void setup_epoll(void) {
     static worker_args_t args;  /* static so it outlives this stack frame */
     args.broadcast_timer_fd = make_timer(1, 5);
     args.timeout_timer_fd   = make_timer(5, 5);
+    args.port = port;
 
     /* Spawn the threads */
     pthread_t threads[NUM_WORKERS];

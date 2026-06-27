@@ -57,16 +57,10 @@ void check_job_timeouts(active_jobs* tabla, int timeout_sec) {
         while (*pp) {
             job_entry *j = *pp;
 
-            if (difftime(now, j->timestamp) >= timeout_sec) {
+            if (j->next_req != NULL && difftime(now, j->timestamp) >= timeout_sec) {
                 fprintf(stderr, "[TIMEOUT] Job %d expired.\n", j->job_id);
 
                 if (tabla == &table_ourjobs) {
-                    if (j->next_req == NULL) {
-                        // It was complete, waiting for a JOB_RELEASE from Erlang.
-                        // No real timeout -> we dont touch it
-                        pp = &(*pp)->next_job;
-                        continue;
-                    }
 
                     char id_str[16];
                     snprintf(id_str, sizeof(id_str), "%d", j->job_id);

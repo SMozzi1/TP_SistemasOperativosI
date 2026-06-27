@@ -1,0 +1,25 @@
+services:
+  nodo1:
+    build: .
+    # Este hostname permite que el otro nodo lo encuentre en la red
+    hostname: nodo1
+    # Ejecutamos el servidor 
+    command: ./servidor
+    tty: true # para que el buffer de c no se quede los print
+    networks:
+      - red_tp
+
+  nodo2:
+    build: .
+    hostname: nodo2
+    # El nodo 2 arranca su propio servidor independiente
+    command: ./servidor
+    tty: true # para que el buffer de c no se quede los print
+    networks:
+      - red_tp
+
+networks:
+  red_tp:
+    ipam:
+      config:
+        - subnet: 10.5.0.0/16
