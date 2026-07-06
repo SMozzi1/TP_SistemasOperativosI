@@ -39,6 +39,11 @@ void connect_client(int fd, int epollfd);
 */
 void udp_broadcast(int socket_UDP, int port, int cpu, int mem, int gpu);
 
+/*
+    Function for handling incoming UDP datagrams from remote nodes.
+    Reads the datagram, extracts the sender's IP and port, and updates the job table with the announced resources.
+    If the node is new, it creates a new job entry; if it already exists, it updates its timestamp and resources.
+*/
 void udp_datagram_from_remote(int fd);
 
 /*
@@ -47,8 +52,17 @@ void udp_datagram_from_remote(int fd);
 */
 void message_from_erlang(int fd, int epollfd);
 
+/*
+    Function for sending a resource request to a remote node.
+    Finds the job associated with the file descriptor, constructs a RESERVE message, and sends it.
+    Rearms the epoll registration to switch from EPOLLOUT (writing) to EPOLLIN (reading) for the next response. 
+*/
 void send_request(int fd, int epollfd);
 
+/*
+    Function for handling incoming messages from remote nodes.
+    Reads a line of input, processes it, and handles disconnections. 
+*/
 void recive_message_from_remote(int fd, int epollfd);
 
 
