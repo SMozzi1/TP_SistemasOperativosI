@@ -48,7 +48,7 @@ int read_until_newline(int fd, char *output_line) {
 
     /* Guard against accumulator buffer overflow */
 
-    if (*acc + n >= BUFFER_MAX) {
+    if (*acc + n >= BUFFER_LEN) {
 
         fprintf(stderr, "[WARN] read_until_newline: buffer overflow on fd=%d, resetting\n", fd);
         *acc = 0;
@@ -229,7 +229,7 @@ void client_to_myserver(int actual_fd, char *instruction) {
 
 void erlang_to_C(char *instruction, time_t timer) {
 
-    char copy[BUFFER_MAX];
+    char copy[BUFFER_LEN];
 
     strncpy(copy, instruction, sizeof(copy) - 1);
     copy[sizeof(copy) - 1] = '\0';

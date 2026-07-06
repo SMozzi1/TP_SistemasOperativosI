@@ -14,8 +14,6 @@
 
 
 #define LENG 1024
-// Max capacity for the stream reconstruction buffer
-#define BUFFER_MAX 2048
 
 /*
     Manages the partial data accumulation for non-blocking stream sockets.
@@ -23,7 +21,7 @@
     accumulated_bytes: Current number of bytes stored in the buffer.
 */
 typedef struct text_buffer{
-    char buffer[512];
+    char buffer[BUFFER_LEN];
     int accumulated_bytes;
 } ConnectionState;
 

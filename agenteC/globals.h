@@ -7,6 +7,8 @@
 #include "../ResourceManager/resource_manager.h"
 
 
+#define BUFFER_LEN 1024      // Standard buffer size for reading network data
+
 extern active_jobs table_ourjobs;
 extern active_jobs table_nodes;
 extern active_jobs table_clients;

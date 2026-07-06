@@ -11,6 +11,7 @@ SRCS = main.c \
        agenteC/agente.c \
        agenteC/comunicaciones.c \
        agenteC/utils.c \
+       agenteC/loopfunc.c \
        ResourceManager/job_table.c \
        ResourceManager/rm_Queue.c
 
@@ -38,6 +39,7 @@ $(TARGET): $(OBJS)
 # Regla para compilar los archivos Erlang (.erl) a (.beam)
 %.beam: %.erl
 	$(ERLC) $<
+
 
 # Limpieza de archivos temporales, el ejecutable y los archivos compilados de Erlang
 clean:
