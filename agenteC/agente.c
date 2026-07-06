@@ -44,7 +44,7 @@ active_jobs table_clients;
 
 
 #define MAX_EVENTS 64        // Maximum number of events epoll will process in a single wake-up
-#define PORT       4200      // TCP Port for both Erlang (localhost) and Remote Nodes (Any IP)
+
 #define BUFFER_LEN 1024      // Standard buffer size for reading network data
 #define NUM_WORKERS 4        // Number of threads in our Thread Pool
 #define MAX_FDS    1024      // Maximum file descriptors supported by our read_until_newline function
@@ -126,6 +126,7 @@ static void initialize_listen_sockets(int port) {
 
 //Event loop (executed by every threads)
 static void* event_loop(void *arg) {
+
     worker_args_t     *args   = (worker_args_t *)arg;
     int port = args->port;
     struct epoll_event events[MAX_EVENTS];
@@ -143,101 +144,47 @@ static void* event_loop(void *arg) {
         for (int i = 0; i < nfds; i++) {
             int fd = events[i].data.fd;
 
+            
             /* ── A: new connection from the Erlang scheduler ────────── */
             if (fd == socket_erlang) {
-                int new_fd = accept4(socket_erlang, NULL, NULL, SOCK_NONBLOCK);
+                
+                int new_fd = connect_erlang(fd, epollfd);
                 if (new_fd < 0) {
-                    if (errno != EAGAIN && errno != EWOULDBLOCK)
-                        log_error("Erlang accept4");
-
+                    // Error already logged in connect_erlang()
                     continue;
                 }
-                //we set an epoll fd for 
-                struct epoll_event ev;
-                ev.events  = EPOLLIN;
-                ev.data.fd = new_fd;
-
-                if (epoll_ctl(epollfd, EPOLL_CTL_ADD, new_fd, &ev) < 0) {
-                    log_error("epoll_ctl ADD erlang conn");
-                    close(new_fd);
-                    continue;
-                }
-
-                /* Store the fd globally.*/
                 erlangfd = new_fd;
-                printf("[EVENT A] Erlang connected on fd=%d\n", erlangfd);
+                  
             }
 
             /* ── B: new connection from a remote node ───────────────── */
             else if (fd == socket_server) {
-
-                struct sockaddr_in client_addr;
-                socklen_t len = sizeof(client_addr);
-                int client_fd = accept4(socket_server,
-                                        (struct sockaddr *)&client_addr,
-                                        &len, SOCK_NONBLOCK);
-                if (client_fd < 0) {
-                    if (errno != EAGAIN && errno != EWOULDBLOCK)
-                        log_error("Remote accept4");
-                    continue;
-                }
-
-                /*
-                    EPOLLONESHOT: ensures only ONE thread processes this fd
-                    per event round, preventing race conditions without an
-                    additional per-fd mutex.
-                 */
-                struct epoll_event ev;
-                ev.events  = EPOLLIN | EPOLLONESHOT;
-                ev.data.fd = client_fd;
-
-                //Add the client_fd into epoll
-                //every time this fd send us a message, erlang_wait wakes up
-                if (epoll_ctl(epollfd, EPOLL_CTL_ADD, client_fd, &ev) < 0) {
-                    log_error("epoll_ctl ADD remote client");
-                    close(client_fd);
-                }
-
-                printf("[EVENT B] Remote node connected: %s fd=%d\n",
-                       inet_ntoa(client_addr.sin_addr), client_fd);
+                
+                conecct_client(fd, epollfd);
+    
             }
 
             /* ── C: UDP broadcast timer fired. send a message ───────────────────────── */
             else if (fd == args->broadcast_timer_fd) {
-                uint64_t exp;
+                
                 /*  Must read the timer fd to clear its readable state;
-                    otherwise epoll keeps waking us up in a busy loop.  */
-                if (read(fd, &exp, sizeof(exp)) < 0 && errno != EAGAIN) {
-                    log_error("read broadcast timer");
-                    continue;
+                otherwise epoll keeps waking us up in a busy loop.  
+                */
+               uint64_t exp;
+               if (read(fd, &exp, sizeof(exp)) < 0 && errno != EAGAIN) {
+                   log_error("read broadcast timer");
+                   continue;
                 }
 
-                //We send a message whith our port and elements
-                char msg[126];
-                pthread_mutex_lock(&mutex_resources);
-                snprintf(msg, sizeof(msg), "ANNOUNCE %d cpu:%d mem:%d gpu:%d\n", port, cpu_available, mem_available, gpu_available);
-                pthread_mutex_unlock(&mutex_resources);
+                udp_broadcast(socket_UDP ,port, cpu_available, mem_available, gpu_available);
 
-                /*
-                 * Format: ANNOUNCE <port> <resources>
-                 * The sender IP is NOT in the payload; it is extracted
-                 * from recvfrom() by the receiving node.
-                 */
-                struct sockaddr_in bcast_addr;
-                memset(&bcast_addr, 0, sizeof(bcast_addr));
-                bcast_addr.sin_family      = AF_INET;
-                bcast_addr.sin_port        = htons(BROADCAST_PORT);
-                // comento esta linea ya que para testear en docker fijo una ip de la red virtual pero es la linea correspondiente
-                bcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
-                //
-                //bcast_addr.sin_addr.s_addr = inet_addr("10.5.255.255");
-                ssize_t sent = sendto(socket_UDP, msg, strlen(msg), 0,(struct sockaddr *)&bcast_addr, sizeof(bcast_addr));
-                if (sent < 0) log_error("[UDP BCAST] sendto failed");
-                else printf("[UDP BCAST] Announcement sent: %s\n", msg);
             }
 
             /* ── D: job timeout timer fired ─────────────────────────── */
-            /*Reads the timer file descriptor to clear its state and invokes timeout checks for both remote node jobs and local jobs.*/
+            /*  
+                Reads the timer file descriptor to clear its state and invokes timeout 
+                checks for both remote node jobs and local jobs.
+            */
             else if (fd == args->timeout_timer_fd) { 
                 uint64_t exp;
                 if (read(fd, &exp, sizeof(exp)) < 0 && errno != EAGAIN) {

@@ -18,6 +18,7 @@
 #include "utils.h"
 #include "../ResourceManager/job_table.h"
 #include "globals.h"
+#include "loopfunc.h"
 
 
 /*
