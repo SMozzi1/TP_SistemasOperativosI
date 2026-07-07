@@ -348,6 +348,7 @@ void erlang_to_C(char *instruction, time_t timer) {
         if (send(erlangfd, nodedata, strlen(nodedata), MSG_DONTWAIT) < 0) {
             perror("[ERROR] erlang_to_C: send GET_NODES response");
         }
+        free(nodedata);
     }
     
     else {

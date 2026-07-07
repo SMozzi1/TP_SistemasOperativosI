@@ -187,19 +187,27 @@ void udp_datagram_from_remote(int fd){
 //F
 void message_from_erlang(int fd, int epollfd){
     char line[BUFFER_LEN];
-    int result = read_until_newline(fd, line);
+    int result;
 
-    if (result == 1) {
+    while ((result = read_until_newline(fd, line)) == 1) {
         printf("[ERLANG ->] %s", line);
         erlang_to_C(line, time(NULL));
-    } else if (result == -1) {
-        log_error("[EVENT F] Erlang disconnected");
-        epoll_ctl(epollfd, EPOLL_CTL_DEL, erlangfd, NULL);
-        close(erlangfd);
-        clear_connection_buffer(erlangfd);
-        erlangfd = -1;
+    }   
+    
+    if (result == -1) {
+    log_error("[EVENT F] Erlang disconnected");
+    epoll_ctl(epollfd, EPOLL_CTL_DEL, erlangfd, NULL);
+    close(erlangfd);
+    clear_connection_buffer(erlangfd);
+    erlangfd = -1;
+    return;
     }
 
+    // we need to recreate the event to handle the epolloneshot.
+    struct epoll_event ev;
+    ev.events  = EPOLLIN | EPOLLONESHOT;
+    ev.data.fd = fd;
+    epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &ev);
 
 }
 
