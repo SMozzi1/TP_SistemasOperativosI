@@ -242,11 +242,6 @@ void setup_epoll(int port) {
      * returns -1 with errno=EPIPE instead of killing the process.  */
     signal(SIGPIPE, SIG_IGN);
 
-    // /* Initialize per-fd buffers and both job tables */
-    // memset(connections, 0, sizeof(connections));
-    // init_jobs_table(&table_nodes);
-    // init_jobs_table(&table_clients);
-
     /* Create the shared epoll instance */
     epollfd = epoll_create1(0);
     if (epollfd < 0) fatal_error("epoll_create1 failed");

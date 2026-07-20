@@ -1,0 +1,17 @@
+gcc -Wall -Wextra -g -pthread -D_GNU_SOURCE -I. -IResourceManager -c main.c -o main.o
+In file included from main.c:2:
+ResourceManager/../agenteC/agente.h:21:13: warning: ‘initialize_listen_sockets’ declared ‘static’ but never defined [-Wunused-function]
+   21 | static void initialize_listen_sockets(int port);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~
+ResourceManager/../agenteC/agente.h:35:14: warning: ‘event_loop’ declared ‘static’ but never defined [-Wunused-function]
+   35 | static void* event_loop(void *arg);
+      |              ^~~~~~~~~~
+gcc -Wall -Wextra -g -pthread -D_GNU_SOURCE -I. -IResourceManager -c agenteC/agente.c -o agenteC/agente.o
+gcc -Wall -Wextra -g -pthread -D_GNU_SOURCE -I. -IResourceManager -c agenteC/comunicaciones.c -o agenteC/comunicaciones.o
+gcc -Wall -Wextra -g -pthread -D_GNU_SOURCE -I. -IResourceManager -c agenteC/utils.c -o agenteC/utils.o
+gcc -Wall -Wextra -g -pthread -D_GNU_SOURCE -I. -IResourceManager -c agenteC/loopfunc.c -o agenteC/loopfunc.o
+gcc -Wall -Wextra -g -pthread -D_GNU_SOURCE -I. -IResourceManager -c ResourceManager/job_table.c -o ResourceManager/job_table.o
+gcc -Wall -Wextra -g -pthread -D_GNU_SOURCE -I. -IResourceManager -c ResourceManager/rm_Queue.c -o ResourceManager/rm_Queue.o
+gcc -Wall -Wextra -g -pthread -D_GNU_SOURCE -I. -IResourceManager -o servidor main.o agenteC/agente.o agenteC/comunicaciones.o agenteC/utils.o agenteC/loopfunc.o ResourceManager/job_table.o ResourceManager/rm_Queue.o -pthread
+erlc Scheduler_Erlang/scheduler.erl
+erlc Scheduler_Erlang/scheduler_utils.erl

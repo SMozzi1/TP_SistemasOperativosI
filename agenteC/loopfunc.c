@@ -77,9 +77,9 @@ void udp_broadcast(int socket_UDP, int port, int cpu, int mem, int gpu) {
     memset(&bcast_addr, 0, sizeof(bcast_addr));
     bcast_addr.sin_family      = AF_INET;
     bcast_addr.sin_port        = htons(12529); //harcoded but the port will be always the same for the broadcast
-    // comento esta linea ya que para testear en docker fijo una ip de la red virtual pero es la linea correspondiente
+   
     bcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
-    //bcast_addr.sin_addr.s_addr = inet_addr("10.5.255.255");
+    
     ssize_t sent = sendto(socket_UDP, msg, strlen(msg), 0,(struct sockaddr *)&bcast_addr, sizeof(bcast_addr));
 
     if (sent < 0) 
@@ -91,7 +91,7 @@ void udp_broadcast(int socket_UDP, int port, int cpu, int mem, int gpu) {
 
 //E
 void udp_datagram_from_remote(int fd){
-     char buf[BUFFER_LEN];
+    char buf[BUFFER_LEN];
     struct sockaddr_in sender;
     socklen_t slen = sizeof(sender);
 
@@ -123,12 +123,17 @@ void udp_datagram_from_remote(int fd){
     */
     int nodo_id = abs((int)inet_addr(sender_ip)); 
 
+    pthread_mutex_lock(&table_nodes.generalMutex); // Lock the table for thread-safe access
+    //Nobody will acess find job while we are modifying the table, so we can use it safely
+
     // We check if the node is already in the table
     job_entry* nodo = FindJob(&table_nodes, nodo_id);
+    pthread_mutex_lock(&table_nodes.mutexTable); // Lock the table while we modify it
+
     int is_new = (nodo == NULL);
 
     if (!is_new) {
-        nodo->timestamp = time(NULL);
+        nodo->timestamp = time(NULL); // Update the timestamp to indicate the node is still active
         granted_t* current_res = nodo->resources;
         while (current_res != NULL) {
             granted_t* next_res = current_res->next;
@@ -139,7 +144,7 @@ void udp_datagram_from_remote(int fd){
     } else {
         nodo = MakeJob(nodo_id, nodo_puerto, time(NULL));
     }
-
+    
     // Pointer for use with strtok_r
     char *saveptr1; 
 
@@ -182,7 +187,9 @@ void udp_datagram_from_remote(int fd){
     } else {
         printf("[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla. %d\n", nodo_puerto);
     }
+    pthread_mutex_unlock(&table_nodes.mutexTable); // Unlock the table after modification
     ReleaseJob(nodo);
+    pthread_mutex_unlock(&table_nodes.generalMutex); // Unlock the general mutex after all operations
 }
 
 //F
@@ -215,6 +222,7 @@ void message_from_erlang(int fd, int epollfd){
 //G
 void send_request(int fd, int epollfd){
     // We find out which Job and which Resource own this FD
+    pthread_mutex_lock(&table_ourjobs.generalMutex);
     job_entry* job = BuscarJobPorFD(fd); 
             
     if (job != NULL && job->next_req != NULL) {
@@ -235,6 +243,7 @@ void send_request(int fd, int epollfd){
         epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &ev);
     }
     ReleaseJob(job);
+    pthread_mutex_unlock(&table_ourjobs.generalMutex);
 }
 
 //H
