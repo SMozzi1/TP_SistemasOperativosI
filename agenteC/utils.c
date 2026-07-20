@@ -49,7 +49,6 @@ void check_job_timeouts(active_jobs* tabla, int timeout_sec) {
     if (tabla == NULL) return;
     time_t now = time(NULL);
 
-    pthread_mutex_lock(&tabla->generalMutex); // Lock the general mutex to prevent concurrent modifications
     pthread_mutex_lock(&tabla->mutexTable);
 
     for (int i = 0; i < TABLE_SIZE; i++) {
@@ -116,7 +115,6 @@ void check_job_timeouts(active_jobs* tabla, int timeout_sec) {
     }
 
     pthread_mutex_unlock(&tabla->mutexTable);
-    pthread_mutex_unlock(&tabla->generalMutex); // Unlock the general mutex after all operations
 }
 
 
@@ -248,9 +246,7 @@ void drain_queue(p_queue_t* q, int* avail, const char* type) {
         ready = ready->next_req;
 
         granted_t* g = MakeGranted((char*)type, req->amount_requested, "local");
-        
-        pthread_mutex_lock(&table_clients.generalMutex);
-        
+
         job_entry* je = FindJobBySocket(&table_clients, req->job_id, req->origin_socket);
         if (je == NULL) {
             je = MakeJob(req->job_id, req->origin_socket, time(NULL));
@@ -269,8 +265,6 @@ void drain_queue(p_queue_t* q, int* avail, const char* type) {
         printf("[SERVER] Job %d: %s otorgada. Registrado en table_clients.\n",
                req->job_id, type);
         DestroyRequest(req);
-    
-        pthread_mutex_unlock(&table_clients.generalMutex);
     }
 }
 

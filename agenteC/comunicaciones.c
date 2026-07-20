@@ -195,8 +195,6 @@ void client_to_myserver(int actual_fd, char *instruction) {
     else if (!strcmp(tokens[0], "GRANTED")) {
         if (num < 2) return;
         int job_id = atoi(tokens[1]);
-        pthread_mutex_lock(&table_ourjobs.generalMutex);
-
         job_entry* job = FindJob(&table_ourjobs, job_id);
         if (job != NULL && job->next_req != NULL) {
             original_socket(job, actual_fd);
@@ -204,8 +202,6 @@ void client_to_myserver(int actual_fd, char *instruction) {
             ask_for_next_resource(job);
         }
         ReleaseJob(job);
-
-        pthread_mutex_unlock(&table_ourjobs.generalMutex);
     }
     else
     {
@@ -219,8 +215,6 @@ void client_to_myserver(int actual_fd, char *instruction) {
         }
 
         int job_id = atoi(tokens[1]);
-        
-        pthread_mutex_lock(&table_ourjobs.generalMutex);
         job_entry* job = FindJob(&table_ourjobs, job_id);
         if (job != NULL) {
             close(actual_fd);
@@ -235,7 +229,6 @@ void client_to_myserver(int actual_fd, char *instruction) {
             RemoveJob(&table_ourjobs, job_id);
         }
         ReleaseJob(job);
-        pthread_mutex_unlock(&table_ourjobs.generalMutex);
     }
 }
 
@@ -324,7 +317,6 @@ void erlang_to_C(char *instruction, time_t timer) {
     else if (!strcmp(tokens[0], "JOB_RELEASE")) {
     if (num < 2) return;
     int job_id = atoi(tokens[1]);
-    pthread_mutex_lock(&table_ourjobs.generalMutex);
 
     job_entry* job = FindJob(&table_ourjobs, job_id);   // antes: &table_nodes
     if (job == NULL) return;                            // ya no está, nada que hacer
@@ -334,8 +326,6 @@ void erlang_to_C(char *instruction, time_t timer) {
     pthread_mutex_unlock(&table_ourjobs.mutexTable);
     RemoveJob(&table_ourjobs, job_id);                  // antes: &table_nodes
     ReleaseJob(job);
-
-    pthread_mutex_unlock(&table_ourjobs.generalMutex);
 }
 
     /* ── JOB_STATUS ──────────────────────────────────────────────── */

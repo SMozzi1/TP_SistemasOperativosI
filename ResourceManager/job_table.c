@@ -105,7 +105,6 @@ void JobsTableInit(active_jobs* table){
     }
        table->active_count = 0;
        pthread_mutex_init(&table->mutexTable, NULL);
-       pthread_mutex_init(&table->generalMutex, NULL);
 }
 
 //active job table destructor
@@ -148,9 +147,8 @@ job_entry* FindJob(active_jobs* table, int job_id){
         look = look->next_job;
        }
     GrabJob(look);
-    job_entry* result = look;
     pthread_mutex_unlock(&table->mutexTable);
-    return result;
+    return look;
 }
 
 //Removes job from the table.   

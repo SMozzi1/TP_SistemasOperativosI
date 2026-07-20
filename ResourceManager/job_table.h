@@ -40,8 +40,7 @@ typedef struct job_entry {
 typedef struct active_jobs {
    job_entry* job_table[TABLE_SIZE];
    int active_count; //amount of total jobs in the table
-   pthread_mutex_t mutexTable;
-   pthread_mutex_t generalMutex;
+   pthread_mutex_t mutexTable; 
 } active_jobs;
 
 typedef struct active_nodes {
