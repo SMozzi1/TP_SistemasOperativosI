@@ -51,6 +51,7 @@ job_entry* MakeJob(int job_id, int origin_socket, time_t time){
     new->resources = NULL; 
     new->next_job = NULL;
     new->next_req = NULL;
+    new->refcount = 1;
     
     return new;
     } 
@@ -59,6 +60,19 @@ job_entry* MakeJob(int job_id, int origin_socket, time_t time){
 void DestroyJob(job_entry* job){
     DestroyGrantedList(job->resources);
     free(job);
+}
+
+void GrabJob(job_entry* job){
+    if(job != NULL)
+        //Increment the reference count atomically to ensure thread safety. 
+        __sync_fetch_and_add(&job->refcount, 1);
+}
+
+void ReleaseJob(job_entry* job){
+    //Subtracts 1 from the reference count atomically. If the count reaches zero, it means no other thread 
+    //is using this job_entry, and it can be safely destroyed.
+    if(job != NULL && __sync_sub_and_fetch(&job->refcount, 1) == 0)
+        DestroyJob(job);
 }
 
 
@@ -113,13 +127,14 @@ int HashF(int job_id){
      return job_id % TABLE_SIZE;
 }
 
-//Inserts a job in the table
+//Inserts a job in the table (takes a reference via GrabJob)
 void JobsTableInsert(active_jobs* table, job_entry* job){
     pthread_mutex_lock(&table->mutexTable);
    int idx = HashF(job->job_id); 
     job->next_job = table->job_table[idx];
     table->job_table[idx] = job;
     table->active_count++; 
+    GrabJob(job);
     pthread_mutex_unlock(&table->mutexTable);
 }
 
@@ -131,6 +146,7 @@ job_entry* FindJob(active_jobs* table, int job_id){
     while( look != NULL && look->job_id != job_id ){
         look = look->next_job;
        }
+    GrabJob(look);
     pthread_mutex_unlock(&table->mutexTable);
     return look;
 }
@@ -162,7 +178,7 @@ void RemoveJob(active_jobs* table, int job_id){
         prev->next_job = current->next_job;
     
     table->active_count--;
-    DestroyJob(current);
+    ReleaseJob(current);
     pthread_mutex_unlock(&table->mutexTable);
     
 }
@@ -201,15 +217,19 @@ void PrintTable(active_jobs* table){
 
 /*Search jobs by fd inside of table_ourjobs*/
 job_entry* BuscarJobPorFD(int fd) {
+    pthread_mutex_lock(&table_ourjobs.mutexTable);
     for (int i = 0; i < TABLE_SIZE; i++) {
         job_entry* current = table_ourjobs.job_table[i];
         while (current != NULL) {
             if (current->origin_socket == fd) {
+                GrabJob(current);
+                pthread_mutex_unlock(&table_ourjobs.mutexTable);
                 return current;
             }
             current = current->next_job;
         }
     }
+    pthread_mutex_unlock(&table_ourjobs.mutexTable);
     return NULL; /*no job with given fd found*/
 }
 
@@ -221,6 +241,7 @@ job_entry* FindJobBySocket(active_jobs* table, int job_id, int origin_socket){
     while (look != NULL && !(look->job_id == job_id && look->origin_socket == origin_socket)) {
         look = look->next_job;
     }
+    GrabJob(look);
     pthread_mutex_unlock(&table->mutexTable);
     return look;
 }

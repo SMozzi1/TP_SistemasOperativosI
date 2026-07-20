@@ -106,7 +106,7 @@ void check_job_timeouts(active_jobs* tabla, int timeout_sec) {
                 j->resources = NULL;
                 *pp = j->next_job;
                 tabla->active_count--;
-                DestroyJob(j);
+                ReleaseJob(j);
 
             } else {
                 pp = &(*pp)->next_job;
@@ -142,6 +142,8 @@ void update_local_resources(job_entry* job) {
 
 
 //
+// Caller MUST hold table_ourjobs.mutexTable when the job is still in the table.
+// If the job has been unlinked from the table first, locking is not needed.
 void release_resources(job_entry* job)
 {
     // flag to see if there is a job or any resources at all
@@ -250,8 +252,10 @@ void drain_queue(p_queue_t* q, int* avail, const char* type) {
             je = MakeJob(req->job_id, req->origin_socket, time(NULL));
             AddResource(je, g);
             JobsTableInsert(&table_clients, je);
+            ReleaseJob(je);
         } else {
             AddResource(je, g);
+            ReleaseJob(je);
         }
 
         char msg[64];
@@ -400,9 +404,12 @@ void release_client_by_fd(int fd) {
                 }
                 pthread_mutex_unlock(&mutex_resources);
 
+                DestroyGrantedList(job->resources);
+                job->resources = NULL;
+
                 *pp = job->next_job;
                 table_clients.active_count--;
-                DestroyJob(job);
+                ReleaseJob(job);
                 // Dond advance on pp: next is already on *pp
             } else {
                 pp = &(*pp)->next_job;
@@ -454,5 +461,5 @@ void handle_outbound_disconnect(int fd) {
 
     release_resources(job);   // frees what would be given of OTHER suppliers
     C_to_erlang("rejected", id_str);
-    DestroyJob(job);
+    ReleaseJob(job);
 }

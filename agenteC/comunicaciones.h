@@ -13,8 +13,6 @@
 #define MAX_FDS 1024
 
 
-#define LENG 1024
-
 /*
     Manages the partial data accumulation for non-blocking stream sockets.
     buffer: Local storage for incoming data chunks before a newline is detected.

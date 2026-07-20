@@ -11,7 +11,7 @@ int connect_erlang(int fd, int epollfd ) {
         return -1;
     }
     struct epoll_event ev;
-    ev.events  = EPOLLIN;
+    ev.events  = EPOLLIN | EPOLLONESHOT;
     ev.data.fd = new_fd;
 
     if (epoll_ctl(epollfd, EPOLL_CTL_ADD, new_fd, &ev) < 0) {
@@ -100,7 +100,7 @@ void udp_datagram_from_remote(int fd){
         return;
 
     buf[bytes] = '\0'; // to end when copying
-    char copy[LENG];
+    char copy[BUFFER_LEN];
     strncpy(copy, buf, sizeof(copy) - 1);
     copy[sizeof(copy) - 1] = '\0';
 
@@ -178,10 +178,11 @@ void udp_datagram_from_remote(int fd){
     */
     if (is_new) {
         JobsTableInsert(&table_nodes, nodo);
-        printf("[UDP RECEIVE] ¡Nuevo nodo descubierto en la red!\n");
+        printf("[UDP RECEIVE] ¡Nuevo nodo descubierto en la red!, puerto %d \n", nodo_puerto);
     } else {
-        printf("[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla.\n");
-    }            
+        printf("[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla. %d\n", nodo_puerto);
+    }
+    ReleaseJob(nodo);
 }
 
 //F
@@ -195,12 +196,12 @@ void message_from_erlang(int fd, int epollfd){
     }   
     
     if (result == -1) {
-    log_error("[EVENT F] Erlang disconnected");
-    epoll_ctl(epollfd, EPOLL_CTL_DEL, erlangfd, NULL);
-    close(erlangfd);
-    clear_connection_buffer(erlangfd);
-    erlangfd = -1;
-    return;
+        log_error("[EVENT F] Erlang disconnected");
+        epoll_ctl(epollfd, EPOLL_CTL_DEL, erlangfd, NULL);
+        close(erlangfd);
+        clear_connection_buffer(erlangfd);
+        erlangfd = -1;
+        return;
     }
 
     // we need to recreate the event to handle the epolloneshot.
@@ -233,7 +234,7 @@ void send_request(int fd, int epollfd){
         ev.data.fd = fd;
         epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &ev);
     }
-
+    ReleaseJob(job);
 }
 
 //H

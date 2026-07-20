@@ -29,7 +29,10 @@ typedef struct job_entry {
     granted_t* resources;
     granted_t* next_req; /*aux pointer*/
     struct job_entry* next_job; 
-
+    /* Reference count: how many threads currently hold a pointer to this job.
+     * Starts at 1 (creation). GrabJob increments, ReleaseJob decrements.
+     * When it reaches 0 the job is freed, preventing use-after-free. */
+    int refcount; 
 
 } job_entry; 
 
@@ -53,6 +56,8 @@ void PrintResources(granted_t* resources);
 /*------Job_entry interface----------------*/
 job_entry* MakeJob(int job_id, int origin_socket, time_t time);
 void DestroyJob(job_entry* job);
+void GrabJob(job_entry* job);
+void ReleaseJob(job_entry* job);
 void AddResource(job_entry* job, granted_t* res);
 void PrintJob(job_entry* job); 
 

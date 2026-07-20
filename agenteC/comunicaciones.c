@@ -37,21 +37,23 @@ int read_until_newline(int fd, char *output_line) {
     char  *storage = connections[fd].buffer;
     int   *acc     = &connections[fd].accumulated_bytes;
 
-    char temp[256];
-    int  n = recv(fd, temp, sizeof(temp) - 1, 0);
+    if (*acc > 0) {
+        fprintf(stderr, "[DEBUGGEANDO] fd=%d ya tenía %d bytes acumulados al reusarse: %.80s\n", fd, *acc, storage);
+    }
+
+    int space = BUFFER_LEN - *acc - 1;
+    if (space <= 0) {
+        fprintf(stderr, "[WARN] read_until_newline: buffer full on fd=%d, resetting\n", fd);
+        *acc = 0;
+        space = BUFFER_LEN - 1;
+    }
+
+    char temp[1024];
+    int  n = recv(fd, temp, space, 0);
 
     if (n == 0) return -1;   /* Peer closed the connection */
     if (n < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) return 0;
-        return -1;
-    }
-
-    /* Guard against accumulator buffer overflow */
-
-    if (*acc + n >= BUFFER_LEN) {
-
-        fprintf(stderr, "[WARN] read_until_newline: buffer overflow on fd=%d, resetting\n", fd);
-        *acc = 0;
         return -1;
     }
 
@@ -142,7 +144,7 @@ void ask_for_next_resource(job_entry* job)
  * instruction: "granted" | "rejected" | "waiting" | "timeout"
  */
 void C_to_erlang(const char *instruction, const char *job_id) {
-    char msg[LENG];
+    char msg[BUFFER_LEN];
     int  n;
 
     if      (!strcmp(instruction, "granted"))  n = snprintf(msg, sizeof(msg), "JOB_GRANTED %s\n",  job_id);
@@ -163,7 +165,7 @@ void C_to_erlang(const char *instruction, const char *job_id) {
 
 void client_to_myserver(int actual_fd, char *instruction) {    
     /* Work on a copy to avoid destroying the original buffer */
-    char copy[LENG];
+    char copy[BUFFER_LEN];
     strncpy(copy, instruction, sizeof(copy) - 1);
     copy[sizeof(copy) - 1] = '\0';
     char *tokens[10];
@@ -199,6 +201,7 @@ void client_to_myserver(int actual_fd, char *instruction) {
             job->next_req = job->next_req->next;
             ask_for_next_resource(job);
         }
+        ReleaseJob(job);
     }
     else
     {
@@ -215,13 +218,17 @@ void client_to_myserver(int actual_fd, char *instruction) {
         job_entry* job = FindJob(&table_ourjobs, job_id);
         if (job != NULL) {
             close(actual_fd);
+
+            pthread_mutex_lock(&table_ourjobs.mutexTable);
             release_resources(job);
+            pthread_mutex_unlock(&table_ourjobs.mutexTable);
 
             char id_str[16];
             snprintf(id_str, sizeof(id_str), "%d", job_id);
             C_to_erlang("rejected", id_str);
             RemoveJob(&table_ourjobs, job_id);
         }
+        ReleaseJob(job);
     }
 }
 
@@ -294,6 +301,7 @@ void erlang_to_C(char *instruction, time_t timer) {
             } else {
                 element->dest_port = 4200; // Fallback por si el nodo recién arranca
             }
+            ReleaseJob(remote_node);
             
             AddResource(newjob, element);
         }
@@ -302,6 +310,7 @@ void erlang_to_C(char *instruction, time_t timer) {
 
         // ERROR CORREGIDO: La firma real de tu función es de 1 argumento
         ask_for_next_resource(newjob);
+        ReleaseJob(newjob);
 
     }
     /* ── JOB_RELEASE ─────────────────────────────────────────────── */
@@ -312,8 +321,11 @@ void erlang_to_C(char *instruction, time_t timer) {
     job_entry* job = FindJob(&table_ourjobs, job_id);   // antes: &table_nodes
     if (job == NULL) return;                            // ya no está, nada que hacer
 
+    pthread_mutex_lock(&table_ourjobs.mutexTable);
     release_resources(job);                             // manda RELEASE a cada provider_fd
+    pthread_mutex_unlock(&table_ourjobs.mutexTable);
     RemoveJob(&table_ourjobs, job_id);                  // antes: &table_nodes
+    ReleaseJob(job);
 }
 
     /* ── JOB_STATUS ──────────────────────────────────────────────── */
@@ -336,6 +348,7 @@ void erlang_to_C(char *instruction, time_t timer) {
     } else {
         C_to_erlang("waiting", tokens[1]);
     }
+    ReleaseJob(job);
 }
 
 

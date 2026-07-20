@@ -1,0 +1,107 @@
+[EVENT F] Erlang disconnected: Success
+[EVENT F] Erlang disconnected: Invalid argument
+[INIT] Worker thread 0 spawned
+[INIT] Worker thread 1 spawned
+[INIT] Worker thread 2 spawned
+[INIT] Worker thread 3 spawned
+[UDP BCAST] Announcement sent: ANNOUNCE 4200 cpu:4 mem:8192 gpu:1
+
+[UDP RECEIVE] ¡Nuevo nodo descubierto en la red!, puerto 4201 
+[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla. 4200
+[EVENT A] Erlang connected on fd=9
+[EVENT A] Erlang connected on fd=9
+[ERLANG ->] 
+[EVENT A] Erlang connected on fd=9
+[ERLANG ->] GET_NODES
+[ERLANG ->] JOB_REQUEST 1001 @172.21.155.36:cpu:3 @172.21.155.36:mem:502 @172.21.155.36:gpu:1
+[REMOTE ->] fd=10: GRANTED 1001
+[DEBUG] Asignado provider_fd = 10 al recurso 'cpu' del Job 1001
+[REMOTE ->] fd=11: GRANTED 1001
+[DEBUG] Asignado provider_fd = 11 al recurso 'mem' del Job 1001
+[REMOTE ->] fd=12: GRANTED 1001
+[DEBUG] Asignado provider_fd = 12 al recurso 'gpu' del Job 1001
+[UDP BCAST] Announcement sent: ANNOUNCE 4200 cpu:4 mem:8192 gpu:1
+
+[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla. 4200
+[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla. 4201
+[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla. 4201
+[ERLANG ->] GET_NODES
+[ERLANG ->] JOB_REQUEST 1002 @172.21.155.36:mem:4503
+[REMOTE ->] fd=13: GRANTED 1002
+[DEBUG] Asignado provider_fd = 13 al recurso 'mem' del Job 1002
+[UDP BCAST] Announcement sent: ANNOUNCE 4200 cpu:4 mem:8192 gpu:1
+
+[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla. 4200
+[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla. 4201
+[ERLANG ->] GET_NODES
+[ERLANG ->] JOB_REQUEST 1003 @172.21.155.36:mem:1291
+[UDP BCAST] Announcement sent: ANNOUNCE 4200 cpu:4 mem:8192 gpu:1
+
+[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla. 4200
+[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla. 4201
+[ERLANG ->] GET_NODES
+[ERLANG ->] JOB_REQUEST 1004 @172.21.155.36:mem:1236
+[ERLANG ->] JOB_RELEASE 1001
+[INFO] Enviado RELEASE del recurso cpu al FD 10 para el Job 1001
+[INFO] Enviado RELEASE del recurso mem al FD 11 para el Job 1001
+[INFO] Enviado RELEASE del recurso gpu al FD 12 para el Job 1001
+[ERLANG ->] JOB_RELEASE 1002
+[INFO] Enviado RELEASE del recurso mem al FD 13 para el Job 1002
+[REMOTE ->] fd=14: GRANTED 1003
+[DEBUG] Asignado provider_fd = 14 al recurso 'mem' del Job 1003
+[UDP BCAST] Announcement sent: ANNOUNCE 4200 cpu:4 mem:8192 gpu:1
+
+[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla. 4200
+[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla. 4201
+[ERLANG ->] GET_NODES
+[ERLANG ->] JOB_REQUEST 1005 @172.21.155.36:cpu:3 @172.21.155.36:mem:1524
+[REMOTE ->] fd=10: GRANTED 1005
+[DEBUG] Asignado provider_fd = 10 al recurso 'cpu' del Job 1005
+[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla. 4201
+[UDP BCAST] Announcement sent: ANNOUNCE 4200 cpu:4 mem:8192 gpu:1
+
+[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla. 4200
+[ERLANG ->] GET_NODES
+[ERLANG ->] JOB_REQUEST 1006 @172.21.155.36:cpu:2 @172.21.155.36:mem:3926
+[ERLANG ->] JOB_RELEASE 1003
+[INFO] Enviado RELEASE del recurso mem al FD 14 para el Job 1003
+[UDP BCAST] Announcement sent: ANNOUNCE 4200 cpu:4 mem:8192 gpu:1
+
+[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla. 4200
+[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla. 4201
+[ERLANG ->] JOB_STATUS 1004
+[ERLANG ->] GET_NODES
+[ERLANG ->] JOB_REQUEST 1007 @172.21.155.36:cpu:1 @172.21.155.36:mem:244 @172.21.155.36:gpu:1
+[UDP BCAST] Announcement sent: ANNOUNCE 4200 cpu:4 mem:8192 gpu:1
+
+[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla. 4200
+[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla. 4201
+[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla. 4201
+[ERLANG ->] JOB_STATUS 1005
+[ERLANG ->] GET_NODES
+[ERLANG ->] JOB_REQUEST 1008 @172.21.155.36:cpu:1 @172.21.155.36:mem:189 @172.21.155.36:gpu:1
+[REMOTE ->] fd=11: GRANTED 1005
+[DEBUG] Asignado provider_fd = 11 al recurso 'mem' del Job 1005
+[REMOTE ->] fd=15: GRANTED 1004
+[DEBUG] Asignado provider_fd = 15 al recurso 'mem' del Job 1004
+[UDP BCAST] Announcement sent: ANNOUNCE 4200 cpu:4 mem:8192 gpu:1
+
+[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla. 4200
+[UDP RECEIVE] Latido recibido. Nod[EVENT G] Remote node fd=14 disconnected
+[WARN] Job 1008: proveedor remoto se desconectó sin responder. Rechazado.
+[EVENT G] Remote node fd=12 disconnected
+[WARN] Job 1006: proveedor remoto se desconectó sin responder. Rechazado.
+[EVENT G] Remote node fd=15 disconnected
+[WARN] Job 1009: proveedor remoto se desconectó sin responder. Rechazado.
+[EVENT G] Remote node fd=11 disconnected
+[WARN] Job 1005: proveedor remoto se desconectó sin responder. Rechazado.
+[EVENT G] Remote node fd=16 disconnected
+[WARN] Job 1010: proveedor remoto se desconectó sin responder. Rechazado.
+[EVENT G] Remote node fd=13 disconnected
+[WARN] Job 1007: proveedor remoto se desconectó sin responder. Rechazado.
+[EVENT G] Remote node fd=10 disconnected
+[EVENT G] Remote node fd=10 disconnected
+[WARN] Job 1011: proveedor remoto se desconectó sin responder. Rechazado.
+[EVENT G] Remote node fd=10 disconnected
+[WARN] Job 1012: proveedor remoto se desconectó sin responder. Rechazado.
+[EVENT F] Erlang disconnected: Resource temporarily unavailable
