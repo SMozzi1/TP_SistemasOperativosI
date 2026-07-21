@@ -1,86 +1,5 @@
-//#define _GNU_SOURCE //actualmente compilamos con -D_GNU_SOURC, si no estuviera, se pondria esta linea
 #include "comunicaciones.h"
 #include "utils.h"
-
-
-
-ConnectionState connections[MAX_FDS];
-
-
-int get_token(char *instruction, char **token_array, int max_tokens) {
-    int i = 0;
-    char *saveptr;
-    //strtok_r is thread safe 
-    char *t = strtok_r(instruction, " \n\r", &saveptr);
-    while (t != NULL && i < max_tokens) {
-        token_array[i++] = t;
-        t = strtok_r(NULL, " \n\r", &saveptr);
-    }
-    return i;
-}
-
-void clear_connection_buffer(int fd) {
-    if (fd >= 0 && fd < MAX_FDS) {
-        connections[fd].accumulated_bytes = 0;
-    }
-}
-
-int read_until_newline(int fd, char *output_line) {
-    if (fd < 0 || fd >= MAX_FDS) return -1;
-
-
-    /* storage: Pointer to the persistent character buffer assigned to this specific file descriptor.
-        It holds the raw data stream until a full, newline-terminated message is detected.
-       acc: Pointer to the counter tracking how many bytes are currently held in the 'storage' buffer.
-        It allows the function to know where to append new data and how much remains after a line is extracted.
-    */
-    char  *storage = connections[fd].buffer;
-    int   *acc     = &connections[fd].accumulated_bytes;
-
-    if (*acc > 0) {
-        fprintf(stderr, "[DEBUGGEANDO] fd=%d ya tenía %d bytes acumulados al reusarse: %.80s\n", fd, *acc, storage);
-    }
-
-    int space = BUFFER_LEN - *acc - 1;
-    if (space <= 0) {
-        fprintf(stderr, "[WARN] read_until_newline: buffer full on fd=%d, resetting\n", fd);
-        *acc = 0;
-        space = BUFFER_LEN - 1;
-    }
-
-    char temp[1024];
-    int  n = recv(fd, temp, space, 0);
-
-    if (n == 0) return -1;   /* Peer closed the connection */
-    if (n < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) return 0;
-        return -1;
-    }
-
-    memcpy(&storage[*acc], temp, n);
-    *acc += n;
-    storage[*acc] = '\0';
-    /* Searches for the first newline character in the accumulated buffer. */
-    char *nl = strchr(storage, '\n');
-
-    /* If a complete line is detected (nl != NULL). */
-    if (nl != NULL) {
-        int line_len = (nl - storage) + 1;
-        memcpy(output_line, storage, line_len);
-        output_line[line_len] = '\0';
-
-        int remaining = *acc - line_len;
-        if (remaining > 0) {
-            memmove(storage, &storage[line_len], remaining);
-        }
-        /* Updates the accumulator to reflect the remaining bytes and signifies success. */
-        *acc = remaining;
-        return 1;
-    }
-    return 0;
-}
-
-
 
 
 
@@ -163,6 +82,8 @@ void C_to_erlang(const char *instruction, const char *job_id) {
 }
 
 
+
+//Cambiar estructuras
 void client_to_myserver(int actual_fd, char *instruction) {    
     /* Work on a copy to avoid destroying the original buffer */
     char copy[BUFFER_LEN];
@@ -233,7 +154,7 @@ void client_to_myserver(int actual_fd, char *instruction) {
 }
 
 
-
+//Cambiar estructuras
 void erlang_to_C(char *instruction, time_t timer) {
 
     char copy[BUFFER_LEN];

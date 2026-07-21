@@ -46,7 +46,7 @@ active_jobs table_clients;
 #define MAX_EVENTS 64        // Maximum number of events epoll will process in a single wake-up
 
 #define NUM_WORKERS 4        // Number of threads in our Thread Pool
-#define MAX_FDS    1024      // Maximum file descriptors supported by our read_until_newline function
+
 
 #define BROADCAST_PORT 12529 
 //Need manualy be changed
@@ -126,7 +126,10 @@ static void initialize_listen_sockets(int port) {
 //Event loop (executed by every threads)
 static void* event_loop(void *arg) {
 
+    //We pass the same timerfd to all threads, but only one thread 
+    //will be woken up by epoll at a time.
     worker_args_t     *args   = (worker_args_t *)arg;
+
     int port = args->port;
     struct epoll_event events[MAX_EVENTS];
 
@@ -149,10 +152,11 @@ static void* event_loop(void *arg) {
             if (fd == socket_erlang) {
                 
                 int new_fd = connect_erlang(fd, epollfd);
-                if (new_fd < 0) {
-                    // Error already logged in connect_erlang()
-                    continue;
-                }
+                // If socket_erlang 
+                // if (new_fd < 0) {
+                //     // Error already logged in connect_erlang()
+                //     continue;
+                // }
                 erlangfd = new_fd;
                   
             }

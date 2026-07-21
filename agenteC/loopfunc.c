@@ -91,13 +91,12 @@ void udp_broadcast(int socket_UDP, int port, int cpu, int mem, int gpu) {
 
 //E
 void udp_datagram_from_remote(int fd){
-     char buf[BUFFER_LEN];
+    char buf[BUFFER_LEN];
     struct sockaddr_in sender;
     socklen_t slen = sizeof(sender);
 
     int bytes = recvfrom(fd, buf, sizeof(buf) - 1, 0, (struct sockaddr *)&sender, &slen);
-    if (bytes <= 0) 
-        return;
+    if (bytes <= 0)  return;
 
     buf[bytes] = '\0'; // to end when copying
     char copy[BUFFER_LEN];
@@ -187,6 +186,7 @@ void udp_datagram_from_remote(int fd){
 
 //F
 void message_from_erlang(int fd, int epollfd){
+    
     char line[BUFFER_LEN];
     int result;
 

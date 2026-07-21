@@ -1,0 +1,26 @@
+gcc -Wall -Wextra -g -pthread -D_GNU_SOURCE -I. -IResourceManager -c main.c -o main.o
+In file included from main.c:2:
+ResourceManager/../agenteC/agente.h:20:13: warning: ‘initialize_listen_sockets’ declared ‘static’ but never defined [-Wunused-function]
+   20 | static void initialize_listen_sockets(int port);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~
+ResourceManager/../agenteC/agente.h:34:14: warning: ‘event_loop’ declared ‘static’ but never defined [-Wunused-function]
+   34 | static void* event_loop(void *arg);
+      |              ^~~~~~~~~~
+gcc -Wall -Wextra -g -pthread -D_GNU_SOURCE -I. -IResourceManager -c agenteC/agente.c -o agenteC/agente.o
+agenteC/agente.c: In function ‘setup_epoll’:
+agenteC/agente.c:290:16: warning: unused variable ‘connections’ [-Wunused-variable]
+  290 |     Connection connections[MAX_FDS];
+      |                ^~~~~~~~~~~
+gcc -Wall -Wextra -g -pthread -D_GNU_SOURCE -I. -IResourceManager -c agenteC/comunicaciones.c -o agenteC/comunicaciones.o
+agenteC/comunicaciones.c: In function ‘client_to_myserver’:
+agenteC/comunicaciones.c:93:17: warning: implicit declaration of function ‘get_token’ [-Wimplicit-function-declaration]
+   93 |     int   num = get_token(copy, tokens, 10);
+      |                 ^~~~~~~~~
+gcc -Wall -Wextra -g -pthread -D_GNU_SOURCE -I. -IResourceManager -c agenteC/utils.c -o agenteC/utils.o
+gcc -Wall -Wextra -g -pthread -D_GNU_SOURCE -I. -IResourceManager -c agenteC/loopfunc.c -o agenteC/loopfunc.o
+gcc -Wall -Wextra -g -pthread -D_GNU_SOURCE -I. -IResourceManager -c agenteC/readInstructions.c -o agenteC/readInstructions.o
+gcc -Wall -Wextra -g -pthread -D_GNU_SOURCE -I. -IResourceManager -c ResourceManager/job_table.c -o ResourceManager/job_table.o
+gcc -Wall -Wextra -g -pthread -D_GNU_SOURCE -I. -IResourceManager -c ResourceManager/rm_Queue.c -o ResourceManager/rm_Queue.o
+gcc -Wall -Wextra -g -pthread -D_GNU_SOURCE -I. -IResourceManager -o servidor main.o agenteC/agente.o agenteC/comunicaciones.o agenteC/utils.o agenteC/loopfunc.o agenteC/readInstructions.o ResourceManager/job_table.o ResourceManager/rm_Queue.o -pthread
+erlc Scheduler_Erlang/scheduler.erl
+erlc Scheduler_Erlang/scheduler_utils.erl

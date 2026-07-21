@@ -15,6 +15,9 @@ int main(int argc, char** argv) {
     } else {
     port = atoi(argv[1]);
     }
+
+    initialize_connection_buffers(); // Initialize connection buffers and mutexes for all file descriptors
+
     /* 1. Iniciate the tables with the EXACT names of globals.h */
     JobsTableInit(&table_ourjobs);
     JobsTableInit(&table_clients);

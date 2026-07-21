@@ -12,6 +12,7 @@ SRCS = main.c \
        agenteC/comunicaciones.c \
        agenteC/utils.c \
        agenteC/loopfunc.c \
+       agenteC/readInstructions.c \
        ResourceManager/job_table.c \
        ResourceManager/rm_Queue.c
 

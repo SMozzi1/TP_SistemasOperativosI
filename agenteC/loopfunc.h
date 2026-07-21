@@ -13,6 +13,7 @@
 #include <sys/timerfd.h>
 #include <sys/socket.h>
 
+#include "readInstructions.h"
 #include "comunicaciones.h"
 #include "utils.h"
 #include "../ResourceManager/job_table.h"

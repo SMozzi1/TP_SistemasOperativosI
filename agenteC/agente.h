@@ -2,7 +2,6 @@
 #define AGENTE_H
 //#define _GNU_SOURCE //This is needed to use accept4
 
-
 #include "comunicaciones.h"
 #include "utils.h"
 #include "../ResourceManager/job_table.h"
