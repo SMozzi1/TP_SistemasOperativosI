@@ -1,7 +1,8 @@
-#ifndef __INSTRUCTIONS_H__
-#define __INSTRUCTIONS_H__
+#ifndef __READ_INSTRUCTIONS_H__
+#define __READ_INSTRUCTIONS_H__
 
-#include "globals.h"
+#include <time.h>
+#include <sys/timerfd.h>
 #include <errno.h>
 #include <string.h>
 #include <stdio.h>
@@ -9,7 +10,10 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/socket.h>
+#include <sys/epoll.h>
+#include <arpa/inet.h>    
 
+#include "globals.h"
 #define MAX_FDS 1024 
 
 /*
@@ -32,6 +36,9 @@ void initialize_connection_buffers();
 /*
     Splits a string into an array of tokens based on whitespace.
     Returns the number of tokens successfully parsed.
+    instruction: The input string to tokenize.
+    token_array: Pre-allocated array of char* to hold the tokens.
+    max_tokens: Maximum number of tokens to extract.
  */
 int get_token(char *instruction, char **token_array, int max_tokens);   
 
@@ -57,4 +64,4 @@ int read_until_newline(int fd, char* output_line);
 
 
 
-#endif /* __INSTRUCTIONS_H__ */
+#endif /* __READ_INSTRUCTIONS_H__ */

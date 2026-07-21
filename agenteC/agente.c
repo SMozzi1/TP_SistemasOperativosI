@@ -20,6 +20,7 @@
 
 #include <signal.h>
 #include "globals.h"
+#include "timer.h"
 #include "comunicaciones.h"
 #include "agente.h"
 
@@ -287,8 +288,8 @@ void setup_epoll(int port) {
         for the timer read itself (check_job_timeouts uses its own mutex internally).
     */
     static worker_args_t args;  /* static so it outlives this stack frame */
-    args.broadcast_timer_fd = make_timer(1, 5);
-    args.timeout_timer_fd   = make_timer(5, 5);
+    args.broadcast_timer_fd = make_timer(1, 5, epollfd);
+    args.timeout_timer_fd   = make_timer(5, 5, epollfd);
     args.port = port;
 
     /* Spawn the threads */

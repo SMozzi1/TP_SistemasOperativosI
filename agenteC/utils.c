@@ -1,48 +1,7 @@
-// #define _GNU_SOURCE
 
 #include "utils.h"
 
 
-
-#define JOB_TIMEOUT_SEC 30
-
-#define NODE_TIMEOUT_SEC 15
-
-
-
-
-
-
-//Timers
-/*
- * Creates a periodic timerfd and registers it in epoll.
- * initial_sec:  seconds until the first expiration.
- * interval_sec: repeat period in seconds.
- */
-int make_timer(int initial_sec, int interval_sec) {
-    int tfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
-    if (tfd < 0) fatal_error("timerfd_create failed");
-
-    struct itimerspec ts;
-    ts.it_value.tv_sec     = initial_sec;
-    ts.it_value.tv_nsec    = 0;
-    ts.it_interval.tv_sec  = interval_sec;
-    ts.it_interval.tv_nsec = 0;
-
-    if (timerfd_settime(tfd, 0, &ts, NULL) < 0) {
-        close(tfd);
-        fatal_error("timerfd_settime failed");
-    }
-
-    struct epoll_event ev;
-    ev.events  = EPOLLIN;
-    ev.data.fd = tfd;
-    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, tfd, &ev) < 0) {
-        close(tfd);
-        fatal_error("epoll_ctl ADD timer failed");
-    }
-    return tfd;
-}
 
 
 void check_job_timeouts(active_jobs* tabla, int timeout_sec) {
