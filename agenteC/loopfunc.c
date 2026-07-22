@@ -29,6 +29,7 @@ int connect_erlang(int fd, int epollfd ) {
 
 //B
 void connect_client(int fd, int epollfd){
+    
     struct sockaddr_in client_addr;
     socklen_t len = sizeof(client_addr);
     int client_fd = accept4(fd, (struct sockaddr *)&client_addr, &len, SOCK_NONBLOCK);

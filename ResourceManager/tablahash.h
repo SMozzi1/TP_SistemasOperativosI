@@ -1,6 +1,12 @@
 #ifndef __TABLAHASH_H__
 #define __TABLAHASH_H__
 
+#include <stdlib.h>
+#include <pthread.h>
+
+#define HASH_SIZE 256
+
+/* 1) Typedefs de punteros a función, definidos ANTES de usarlos en el struct */
 typedef void *(*FuncionCopiadora)(void *dato);
 /** Retorna una copia fisica del dato */
 typedef int (*FuncionComparadora)(void *dato1, void *dato2);
@@ -11,12 +17,35 @@ typedef void (*FuncionDestructora)(void *dato);
 typedef unsigned (*FuncionHash)(void *dato);
 /** Retorna un entero sin signo para el dato */
 
+/* 2) Casillas de la tabla hash (encadenamiento para colisiones) */
+typedef struct _NodoLista {
+    void *dato;
+    struct _NodoLista *next;
+} NodoLista;
+
+typedef struct {
+  NodoLista* lista;
+} CasillaHash;
+
+/* 3) El struct principal, ahora expuesto acá en el .h */
+struct _TablaHash {
+  CasillaHash *elems;
+  unsigned numElems;
+  unsigned capacidad;
+  FuncionCopiadora copia;
+  FuncionComparadora comp;
+  FuncionDestructora destr;
+  FuncionHash hash;
+  pthread_mutex_t table_mutex;
+};
+
+/* 4) TablaHash sigue siendo un puntero al struct (coincide con el uso "->" en el .c) */
 typedef struct _TablaHash *TablaHash;
 
 /**
  * Crea una nueva tabla hash vacia, con la capacidad dada.
  */
-TablaHash tablahash_crear(unsigned capacidad, FuncionCopiadora copia,
+TablaHash tablahash_crear(FuncionCopiadora copia,
                           FuncionComparadora comp, FuncionDestructora destr,
                           FuncionHash hash);
 

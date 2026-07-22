@@ -19,6 +19,7 @@ typedef struct _received_node
 
 }received_node;
 
+
 typedef struct _received_job
 {
     int id;
@@ -26,6 +27,7 @@ typedef struct _received_job
     int port;
 
 }received_job;
+
 
 // specific funcionts for nodes
 unsigned hash_node(void* data);

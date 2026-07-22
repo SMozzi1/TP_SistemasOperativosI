@@ -1,23 +1,18 @@
-// globales.h
-#ifndef GLOBALES_H
-#define GLOBALES_H
+#ifndef _GLOBALS_H_
+#define _GLOBALs_H_
 
 
-#include "../ResourceManager/job_table.h"
-#include "../ResourceManager/resource_manager.h"
+#include "../ResourceManager/hash.h"
+//#include "../ResourceManager/resource_queue.h"
 
 
 #define BUFFER_LEN 1024      // Standard buffer size for reading network data
 
-extern active_jobs table_ourjobs;
-extern active_jobs table_nodes;
-extern active_jobs table_clients;
+extern TablaHash hash_nodo;
+extern TablaHash hash_job;
 
 
 
-extern p_queue_t cpu_queue;
-extern p_queue_t mem_queue;
-extern p_queue_t gpu_queue;
 
 
 extern int cpu_available;
@@ -26,7 +21,6 @@ extern int gpu_available;
 
 
 
-extern pthread_mutex_t mutex_resources;
 
 
 extern int epollfd;

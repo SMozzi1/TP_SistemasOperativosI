@@ -3,7 +3,7 @@
 
 
 // specific funcionts for nodes
-unsigned hash_node(void* data){
+unsigned func_hash_node(void* data){
     received_node* node = (received_node*) data;
     return (unsigned)(node->ip + node->port);
 }
@@ -28,7 +28,7 @@ void destr_node(void* data){
 }
 
 // specific functions for jobs
-unsigned hash_job(void* data){
+unsigned func_hash_job(void* data){
     received_job* job = (received_job*) data;
     return (job->id + job->ip + job->port);
 }
@@ -49,9 +49,11 @@ void dest_job(void* data){
 }
 
 TablaHash create_table_nodes(){
-    return tablahash_crear(HASH_SIZE, copy_node, comp_node, destr_node, hash_node);
+    return tablahash_crear(copy_node, comp_node, destr_node, func_hash_node);
 }
 
+
+//
 TablaHash create_table_jobs(){
-    return tablahash_crear(HASH_SIZE, copy_node, comp_node, destr_node, hash_node);
+    return tablahash_crear(copy_node, comp_node, destr_node, func_hash_job);
 }

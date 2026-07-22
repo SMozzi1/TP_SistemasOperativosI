@@ -20,11 +20,6 @@
 
 
 
-
-#
-
-
-#include "../ResourceManager/job_table.h"
 #include "globals.h"
 
 

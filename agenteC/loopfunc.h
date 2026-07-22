@@ -16,7 +16,6 @@
 #include "read_instructions.h"
 #include "comunicaciones.h"
 #include "utils.h"
-#include "../ResourceManager/job_table.h"
 #include "globals.h"
 
 /*
