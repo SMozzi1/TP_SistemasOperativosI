@@ -19,9 +19,9 @@ int main(int argc, char** argv) {
     initialize_connection_buffers(); // Initialize connection buffers and mutexes for all file descriptors
 
     /* 1. Iniciate the tables with the EXACT names of globals.h */
-    &table_ourjobs = create_table_jobs();
-    JobsTableInit(&table_clients); // ?
-    &table_nodes = create_table_nodes();
+    &table_ourjobs = create_table_jobs(); // local jobs table
+    &table_nodejobs = create_table_jobs(); // remote jobs table
+    &table_nodes = create_table_nodes(); // nodes that we are connected to table
 
     /* 2. Iniciate the queues */
     make_queue(&cpu_queue);

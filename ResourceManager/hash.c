@@ -2,17 +2,17 @@
 #include <assert.h>
 
 
-// specific funcionts for nodes
+// specific funcionts for Server nodes
 unsigned func_hash_node(void* data){
     received_node* node = (received_node*) data;
-    return (unsigned)(node->ip + node->port);
+    return (unsigned)(node->ip); // we hash using the ip of the node, since it is unique for each node
 }
 
 int comp_node(void* data1, void* data2){
     received_node* node1 = (received_node*)data1;
     received_node* node2 = (received_node*)data2;
 
-    return !((node1->ip == node2->ip) && (node1->port == node2->port)); // 0 if true other if false
+    return !((node1->ip == node2->ip)); // 0 if true other if false
 }
 
 void* copy_node(void* data){
@@ -27,7 +27,7 @@ void destr_node(void* data){
     free(data);
 }
 
-// specific functions for jobs
+// specific functions for Server jobs
 unsigned func_hash_job(void* data){
     received_job* job = (received_job*) data;
     return (job->id + job->ip + job->port);
@@ -55,5 +55,32 @@ TablaHash create_table_nodes(){
 
 //
 TablaHash create_table_jobs(){
-    return tablahash_crear(copy_node, comp_node, destr_node, func_hash_job);
+    return tablahash_crear(copy_job, comp_job, destr_job, func_hash_job);
+}
+
+
+// functions for local jobs
+
+unsigned func_hash_fd(void *data) {
+    fd_job_entry *e = (fd_job_entry *)data;
+    return (unsigned)e->fd;
+}
+
+int comp_fd(void *data1, void *data2) {
+    fd_job_entry *a = (fd_job_entry *)data1;
+    fd_job_entry *b = (fd_job_entry *)data2;
+    return !(a->fd == b->fd);
+}
+
+void *copy_fd(void *data) {
+    fd_job_entry *orig = (fd_job_entry *)data;
+    fd_job_entry *copia = malloc(sizeof(fd_job_entry));
+    *copia = *orig;
+    return copia;
+}
+
+void destr_fd(void *data) { free(data); }
+
+TablaHash create_table_fd_jobs() {
+    return tablahash_crear(copy_fd, comp_fd, destr_fd, func_hash_fd);
 }

@@ -7,6 +7,23 @@
 #define HASH_SIZE 256
 
 
+// resources structure
+
+typedef struct pending_resource {
+    char type[8];
+    int amount;
+    char dest_ip[16];
+    int dest_port;
+    struct pending_resource *next;
+} pending_resource_t;
+
+
+/* --- Server ---*/
+
+
+/**
+ * in this section we have all the logistics of the jobs and nodes that we receive from other nodes
+ */
 
 typedef struct _received_node
 {
@@ -25,19 +42,21 @@ typedef struct _received_job
     int id;
     int ip;
     int port;
-    
+    int cpu_granted; 
+    int mem_granted;
+    int gpu_granted;
 
 }received_job;
 
 
 // specific funcionts for nodes
-unsigned hash_node(void* data);
+unsigned func_hash_node(void* data);
 int comp_node(void* data1, void* data2);
 void* copy_node(void* data);
-void dest_node(void* data);
+void destr_node(void* data);
 
 // specific functions for jobs
-unsigned hash_job(void* data);
+unsigned func_hash_job(void* data);
 int comp_job(void* data1, void* data2);
 void* copy_job(void* data);
 void dest_job(void* data);
@@ -45,5 +64,28 @@ void dest_job(void* data);
 TablaHash create_table_nodes();
 TablaHash create_table_jobs();
 
+/* --- Client --- */
+
+/*
+* in this section we will have all the local jobs logistics that we receive from erlang
+*/
+
+typedef struct {
+    int job_id;
+    int erlang_socket;
+    int origin_socket;        // fd of the node that we are asking for resources
+    pending_resource_t *next_req;
+} local_job_t;
+
+typedef struct {
+    int fd;
+    local_job_t *job;
+} fd_job_entry;
+
+unsigned func_hash_fd(void *data);
+int comp_fd(void *data1, void *data2);
+void *copy_fd(void *data);
+void destr_fd(void *data);
+TablaHash create_table_fd_jobs();
 
 #endif // _HASH_

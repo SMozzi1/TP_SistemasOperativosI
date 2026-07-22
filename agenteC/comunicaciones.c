@@ -2,8 +2,10 @@
 #include "utils.h"
 
 
+// asks for the next resource in the list of resources to be requested by the local job.
+// it either sends a request to the next node or, if there are no more resources, it notifies the Erlang scheduler that the job has been granted.
 
-void ask_for_next_resource(received_job* job)
+void ask_for_next_resource(local_job_t* job)
 {
     // If there are no more resources on the list, we have successfully completed our task.
     if (job->next_req == NULL)
@@ -15,6 +17,7 @@ void ask_for_next_resource(received_job* job)
         return;
 
     }
+
     //We move to the other resource we want to ask.
     else
     {
@@ -27,7 +30,7 @@ void ask_for_next_resource(received_job* job)
             return;
         }
         
-        job->origin_socket = remote_fd;
+        
         
         struct sockaddr_in remote_addr;
         memset(&remote_addr, 0, sizeof(remote_addr));
@@ -41,6 +44,10 @@ void ask_for_next_resource(received_job* job)
             close(remote_fd);
             return;
         }
+        // we insert once we know the connection is established.
+        job->origin_socket = remote_fd;
+        // insert local job in the table
+        tablahash_insert(&table_nodejobs, job);
         
         // Resister the socket in epoll;
         struct epoll_event ev;

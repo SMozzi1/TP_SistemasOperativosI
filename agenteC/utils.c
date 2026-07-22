@@ -85,14 +85,14 @@ void original_socket(job_entry* job, int fd)
 // If a resource order arrived, it queues it into the corresponding queue, 
 // later it calls reserve_elements to try to assign resourecs to the works on wait.
 void enqueue_jobs(const char* resource, int job_id, int amount, int fd_actual) {
-    p_request_t* rq = MakeRequest(job_id, fd_actual, amount);
+    request* rq = make_request(job_id, fd_actual, amount);
 
     if(!strcmp(resource, "cpu")) {
-        EnqueueRequest(&cpu_queue, rq);
+        enqueue_request(&cpu_queue, rq);
     } else if (!strcmp(resource, "mem")) {
-        EnqueueRequest(&mem_queue, rq);
+        enqueue_request(&mem_queue, rq);
     } else {
-        EnqueueRequest(&gpu_queue, rq);
+        enqueue_request(&gpu_queue, rq);
     }
 
     reserve_elements();
