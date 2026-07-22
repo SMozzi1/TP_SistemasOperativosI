@@ -19,14 +19,14 @@ int main(int argc, char** argv) {
     initialize_connection_buffers(); // Initialize connection buffers and mutexes for all file descriptors
 
     /* 1. Iniciate the tables with the EXACT names of globals.h */
-    JobsTableInit(&table_ourjobs);
-    JobsTableInit(&table_clients);
-    JobsTableInit(&table_nodes);
+    &table_ourjobs = create_table_jobs();
+    JobsTableInit(&table_clients); // ?
+    &table_nodes = create_table_nodes();
 
     /* 2. Iniciate the queues */
-    MakeQueue(&cpu_queue);
-    MakeQueue(&mem_queue);
-    MakeQueue(&gpu_queue);
+    make_queue(&cpu_queue);
+    make_queue(&mem_queue);
+    make_queue(&gpu_queue);
 
      /* 3. Start with the main trail.
       * No need for declaring epollfd nor erlangd here since

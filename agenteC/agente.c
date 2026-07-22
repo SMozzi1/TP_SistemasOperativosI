@@ -39,8 +39,8 @@ active_jobs table_ourjobs;
 /* Mutex we use to prevent race condition */
 pthread_mutex_t mutex_resources = PTHREAD_MUTEX_INITIALIZER;
 
-active_jobs table_nodes;
-active_jobs table_clients;
+received_job table_nodes;
+received_job table_clients;
 
 
 
@@ -59,6 +59,10 @@ int socket_server;
 int socket_erlang;
 int socket_UDP;
 
+
+/**
+ * No necesita cambios ya que no usa estructuras de datos ni funciones de la tabla hash.
+ */
 
 //Socket initialization
 static void initialize_listen_sockets(int port) {

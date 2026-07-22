@@ -3,7 +3,7 @@
 
 
 
-void ask_for_next_resource(job_entry* job)
+void ask_for_next_resource(received_job* job)
 {
     // If there are no more resources on the list, we have successfully completed our task.
     if (job->next_req == NULL)
