@@ -13,7 +13,9 @@
 #include <sys/epoll.h>
 #include <arpa/inet.h>    
 
+#include "timer.h"
 #include "globals.h"
+
 #define MAX_FDS 1024 
 
 /*

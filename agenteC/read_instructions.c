@@ -171,9 +171,8 @@ char* get_udp_message(int fd){
     nodo.mem = get_quantity(tokens[3]);
     nodo.gpu = get_quantity(tokens[4]);
 
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    nodo.time = ts.tv_sec;
+    
+    nodo.time = get_monotonic_time();
 
     //if it is new then it insert in hash_nodes, otherwise replace it 
     tablahash_insertar(hash_nodo, (void*)&nodo);

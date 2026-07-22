@@ -25,6 +25,7 @@ typedef struct _received_job
     int id;
     int ip;
     int port;
+    
 
 }received_job;
 

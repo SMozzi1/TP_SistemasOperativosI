@@ -10,6 +10,8 @@ int connect_erlang(int fd, int epollfd ) {
         //A fd never will be negative, so we can return -1 to indicate an error and let the caller handle it.
         return -1;
     }
+
+
     struct epoll_event ev;
     ev.events  = EPOLLIN | EPOLLONESHOT;
     ev.data.fd = new_fd;
@@ -61,10 +63,11 @@ void connect_client(int fd, int epollfd){
 }
 
 //C
+//Each queue have the resources 
 void udp_broadcast(int socket_UDP, int port, int cpu, int mem, int gpu) {
     //We send a message whith our port and elements
     char msg[126];
-    pthread_mutex_lock(&mutex_resources);
+    pthread_mutex_lock(&);
 
     /*
         Format: ANNOUNCE <port> <resources>
@@ -92,97 +95,39 @@ void udp_broadcast(int socket_UDP, int port, int cpu, int mem, int gpu) {
 
 //E
 void udp_datagram_from_remote(int fd){
-    char buf[BUFFER_LEN];
+      char buf[BUFFER_LEN];
     struct sockaddr_in sender;
     socklen_t slen = sizeof(sender);
 
     int bytes = recvfrom(fd, buf, sizeof(buf) - 1, 0, (struct sockaddr *)&sender, &slen);
-    if (bytes <= 0)  return;
+    if (bytes <= 0) return;
 
-    buf[bytes] = '\0'; // to end when copying
+    buf[bytes] = '\0';
     char copy[BUFFER_LEN];
     strncpy(copy, buf, sizeof(copy) - 1);
     copy[sizeof(copy) - 1] = '\0';
 
     char *tokens[10];
     int num = get_token(copy, tokens, 10);
+
     if (num < 2) return; // At least we need ANNOUNCE and the port
 
-                
-    //We get the ip 
-    char sender_ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &(sender.sin_addr), sender_ip, sizeof(sender_ip));
-                
+    int ip_int = (int)sender.sin_addr.s_addr;
+    int port = atoi(tokens[1]);
 
-    int nodo_puerto = atoi(tokens[1]);
-                
-    /* 
-        Converts the sender's IP address (string) into a 32-bit integer identifier.
-        inet_addr: Translates the IPv4 string (e.g., "172.21.155.36") into a 32-bit 
-        binary representation in network byte order.This serves as a unique numeric key for the node in the job table.
-    */
-    int nodo_id = abs((int)inet_addr(sender_ip)); 
+    received_node nodo;
+    nodo.ip = ip_int;
+    nodo.port = port;
+    nodo.cpu = get_quantity(tokens[2]);
+    nodo.mem = get_quantity(tokens[3]);
+    nodo.gpu = get_quantity(tokens[4]);
 
-    // We check if the node is already in the table
-    job_entry* nodo = FindJob(&table_nodes, nodo_id);
-    int is_new = (nodo == NULL);
+    
+    nodo.time = get_monotonic_time();
 
-    if (!is_new) {
-        nodo->timestamp = time(NULL);
-        granted_t* current_res = nodo->resources;
-        while (current_res != NULL) {
-            granted_t* next_res = current_res->next;
-            free(current_res);
-            current_res = next_res;
-        }
-    nodo->resources = NULL;
-    } else {
-        nodo = MakeJob(nodo_id, nodo_puerto, time(NULL));
-    }
+    //if it is new then it insert in hash_nodes, otherwise replace it 
+    tablahash_insertar(hash_nodo, (void*)&nodo);
 
-    // Pointer for use with strtok_r
-    char *saveptr1; 
-
-    // process resources
-    for(int i = 2; i < num; i++) {
-        char *res_token = tokens[i]; 
-                        
-        // We use 'strtol_r' (reentrant) which is thread-safe.
-        char *res_type  = strtok_r(res_token, ":", &saveptr1);
-        char *res_amt   = strtok_r(NULL, ":", &saveptr1);
-
-        if (res_type && res_amt) {
-            granted_t* res = malloc(sizeof(granted_t));
-            if (res == NULL) continue;
-
-            strncpy(res->type, res_type, sizeof(res->type) - 1);
-            res->type[sizeof(res->type) - 1] = '\0';
-                            
-            res->amount = atoi(res_amt);
-            res->provider_fd = -1; 
-                            
-            strncpy(res->dest_ip, sender_ip, sizeof(res->dest_ip) - 1);
-            res->dest_ip[sizeof(res->dest_ip) - 1] = '\0';
-                            
-            res->dest_port = nodo_puerto;
-                            
-            //Insert at the beginning of the node's linked list
-            res->next = nodo->resources;
-            nodo->resources = res;
-        }
-    }
-
-    /*
-        We only insert it into the table if it's a node that didn't previously exist.
-        (If it already existed, we directly modify its resources using the pointer provided by FindJob)
-    */
-    if (is_new) {
-        JobsTableInsert(&table_nodes, nodo);
-        printf("[UDP RECEIVE] ¡Nuevo nodo descubierto en la red!, puerto %d \n", nodo_puerto);
-    } else {
-        printf("[UDP RECEIVE] Latido recibido. Nodo ya estaba en la tabla. %d\n", nodo_puerto);
-    }
-    ReleaseJob(nodo);
 }
 
 //F

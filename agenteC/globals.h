@@ -3,7 +3,7 @@
 
 
 #include "../ResourceManager/hash.h"
-//#include "../ResourceManager/resource_queue.h"
+#include "../ResourceManager/resource_queue.h"
 
 
 #define BUFFER_LEN 1024      // Standard buffer size for reading network data
@@ -11,9 +11,9 @@
 extern TablaHash hash_nodo;
 extern TablaHash hash_job;
 
-
-
-
+extern 
+extern
+extern
 
 extern int cpu_available;
 extern int mem_available;

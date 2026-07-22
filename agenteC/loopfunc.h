@@ -1,5 +1,5 @@
-#ifndef LOOPFUNC_H
-#define LOOPFUNC_H
+#ifndef _LOOPFUNC_H_
+#define _LOOPFUNC_H_
 
 #include <stdio.h>
 #include <stdlib.h>

@@ -51,7 +51,7 @@ int make_timer(int initial_sec, int interval_sec, int epollfd) {
 
 
 
-void check_job_timeouts(active_jobs* tabla, int timeout_sec) {
+void check_job_timeouts( , int timeout_sec) {
     if (tabla == NULL) return;
     time_t now = time(NULL);
 
@@ -121,4 +121,12 @@ void check_job_timeouts(active_jobs* tabla, int timeout_sec) {
     }
 
     pthread_mutex_unlock(&tabla->mutexTable);
+}
+
+
+
+time_t get_monotonic_time(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec;
 }
