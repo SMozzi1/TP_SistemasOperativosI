@@ -8,20 +8,21 @@
 
 #define BUFFER_LEN 1024      // Standard buffer size for reading network data
 
-extern TablaHash hash_nodo;
-extern TablaHash hash_job;
+//extern TablaHash hash_nodo;
+//extern TablaHash hash_job;
 
-extern request_queue cpu_queue;
-extern request_queue mem_queue;
-extern request_queue gpu_queue;
+extern TablaHash table_ourjobs;
+extern TablaHash table_nodejobs;
+extern TablaHash table_nodes;
+
+extern request_queue* cpu_queue;
+extern request_queue* mem_queue;
+extern request_queue* gpu_queue;
 
 
 extern int cpu_available;
 extern int mem_available;
 extern int gpu_available;
-
-
-
 
 
 extern int epollfd;

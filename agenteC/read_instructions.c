@@ -175,28 +175,28 @@ char* get_udp_message(int fd){
     nodo.time = get_monotonic_time();
 
     //if it is new then it insert in hash_nodes, otherwise replace it 
-    tablahash_insertar(hash_nodo, (void*)&nodo);
+    tablahash_insertar(table_nodes, (void*)&nodo);
 
     return NULL;
 }
 
 char* get_nodes_instance() {
 
-    pthread_mutex_lock(&hash_nodo->table_mutex);
+    pthread_mutex_lock(&table_nodes->table_mutex);
 
     size_t buffer_size = 8192;
     char* result = malloc(buffer_size);
 
     if (result == NULL) {
-        pthread_mutex_unlock(&hash_nodo->table_mutex);
+        pthread_mutex_unlock(&table_nodes->table_mutex);
         return NULL;
     }
 
     int offset = snprintf(result, buffer_size, "NODES ");
     int first = 1;  // para saber cuándo NO anteponer ';'
 
-    for (unsigned i = 0; i < hash_nodo->capacidad; i++) {
-        NodoLista* actual = hash_nodo->elems[i].lista;
+    for (unsigned i = 0; i < table_nodes->capacidad; i++) {
+        NodoLista* actual = table_nodes->elems[i].lista;
 
         while (actual != NULL) {
             received_node* nodo = (received_node*)actual->dato;
@@ -227,7 +227,7 @@ char* get_nodes_instance() {
         }
     }
 
-    pthread_mutex_unlock(&hash_nodo->table_mutex);
+    pthread_mutex_unlock(&table_nodes->table_mutex);
 
     // Para que Erlang sepa dónde termina de escuchar
     if ((size_t)offset < buffer_size - 1) {

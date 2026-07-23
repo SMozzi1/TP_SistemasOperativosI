@@ -136,7 +136,7 @@ void udp_datagram_from_remote(int fd){
     nodo.time = get_monotonic_time();
 
     //if it is new then it insert in hash_nodes, otherwise replace it 
-    tablahash_insertar(hash_nodo, (void*)&nodo);
+    tablahash_insertar(table_nodes, (void*)&nodo);
 
 }
 

@@ -269,39 +269,36 @@ void fatal_error(const char *msg) { perror(msg); exit(EXIT_FAILURE); }
 // Idempotent: if in 'fd' theres nothing else reserved, it does nothing.
 
 void release_client_by_fd(int fd) {
-    pthread_mutex_lock(&table_clients.mutexTable);
+    pthread_mutex_lock(&table_nodes->mutexTable);
 
     int found_any = 0;
 
-    for (int i = 0; i < TABLE_SIZE; i++) {
-        job_entry** pp = &table_clients.job_table[i];
+    for (int i = 0; i < HASH_SIZE; i++) {
+        received_job** pp = &table_nodes->elems[i].lista;
         while (*pp != NULL) {
-            job_entry* job = *pp;
+            received_job* job = *pp;
             if (job->origin_socket == fd) {
                 found_any = 1;
 
                 pthread_mutex_lock(&mutex_resources);
-                for (granted_t* r = job->resources; r != NULL; r = r->next) {
-                    if      (!strcmp(r->type, "cpu")) cpu_available += r->amount;
-                    else if (!strcmp(r->type, "mem")) mem_available += r->amount;
-                    else if (!strcmp(r->type, "gpu")) gpu_available += r->amount;
-                }
+                cpu_available += job->cpu_granted;
+                mem_available += job->mem_granted;
+                gpu_available += job->gpu_granted;
                 pthread_mutex_unlock(&mutex_resources);
 
-                DestroyGrantedList(job->resources);
-                job->resources = NULL;
-
-                *pp = job->next_job;
-                table_clients.active_count--;
-                ReleaseJob(job);
-                // Dond advance on pp: next is already on *pp
+                job->cpu_granted = 0;
+                job->gpu_granted = 0;
+                job->mem_granted = 0;
+            
+                table_nodes->numElems--;
+                free(job);
             } else {
                 pp = &(*pp)->next_job;
             }
         }
     }
 
-    pthread_mutex_unlock(&table_clients.mutexTable);
+    pthread_mutex_unlock(&table_nodes->table_mutex);
 
     if (found_any) reserve_elements();
 }

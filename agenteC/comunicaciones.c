@@ -47,7 +47,10 @@ void ask_for_next_resource(local_job_t* job)
         // we insert once we know the connection is establisshed
         job->origin_socket = remote_fd;
         // insert local job in the table
-        tablahash_insert(&table_nodejobs, job);
+        fd_job_entry* job_entry = malloc(sizeof(fd_job_entry));
+        job_entry->fd = remote_fd;
+        job_entry->job = job;
+        tablahash_insert(&table_nodejobs, job_entry);
         
         // Resister the socket in epoll;
         struct epoll_event ev;
@@ -114,14 +117,26 @@ void client_to_myserver(int actual_fd, char *instruction) {
     /* ── GRANTED / DENIED: response to a RESERVE we sent ─────────────── */
     else if (!strcmp(tokens[0], "GRANTED")) {
         if (num < 2) return;
-        int job_id = atoi(tokens[1]);
-        job_entry* job = FindJob(&table_ourjobs, job_id);
-        if (job != NULL && job->next_req != NULL) {
-            original_socket(job, actual_fd);
-            job->next_req = job->next_req->next;
-            ask_for_next_resource(job);
+        int received_job_id = atoi(tokens[1]);
+        fd_job_entry* dummy;
+        dummy->fd = actual_fd;
+        fd_job_entry* found = (fd_job_entry*) tablahash_buscar(&table_fdjobs, dummy);
+
+        if (found != NULL && found->job != NULL) {
+            local_job_t* job = found->job;
+            if(job->job_id == received_job_id){
+                pending_resource_t* req = job -> next_req;
+                if(req != NULL){
+                    job->next_req = req->next; 
+                    req->next = job->granted_reqs;
+                    job->granted_reqs = req;
+                }
+                printf("[SERVER] Job %d: recurso otorgado por fd=%d\n", job->job_id, actual_fd);
+                tabla_hash_eliminar(&table_fdjobs, dummy); // we do this since ask_for_next_resource will insert another fd if we ask for another resource to another node
+                ask_for_next_resource(job);
+            }
         }
-        ReleaseJob(job);
+
     }
     else
     {
@@ -184,7 +199,15 @@ void erlang_to_C(char *instruction, time_t timer) {
             return;
         }
         
-        job_entry* newjob = MakeJob(job_id, erlangfd, timer);
+        local_job_t* newjob = malloc(sizeof(local_job_t));
+        newjob->job_id = job_id;
+        newjob->erlang_socket = erlangfd;
+        newjob->next_req = NULL;
+        newjob->granted_reqs = NULL;
+        newjob->timer = timer;
+        newjob->origin_socket = -1; // Initialize to an invalid value
+
+        pending_resource_t* tail = NULL; // auxiliar pointer to build the linked list of resources
 
         // 2. Un solo bucle para extraer todos los recursos
         for (int i = 2; i < num; i++) {
@@ -208,30 +231,46 @@ void erlang_to_C(char *instruction, time_t timer) {
             
             int amount = atoi(dest_amt);
             
-            // Creamos el recurso
-            granted_t* element = MakeGranted(dest_res, amount, dest_ip);
-            
+            // we create the resource entry and add it to the linked list of resources for this job
+            pending_resource_t* req = malloc(sizeof(pending_resource_t));
+            strncpy(req->dest_ip, dest_ip, sizeof(req->dest_ip) - 1);
+            req->dest_ip[sizeof(req->dest_ip) - 1] = '\0';
+            strncpy(req->type, dest_res, sizeof(req->type) - 1);
+            req->type[sizeof(req->type) - 1] = '\0';
+            req->amount = atoi(dest_amt);
+            req->next = NULL;
+
             // BÚSQUEDA O(1): Convertimos la IP de Erlang y buscamos en la tabla
             int target_ip_int = abs((int)inet_addr(dest_ip));
-            job_entry* remote_node = FindJob(&table_nodes, target_ip_int);
-            
+            received_node* dummy_node = malloc(sizeof(received_node));
+            dummy_node->ip = target_ip_int;
+            received_node* remote_node = (received_node*) tablahash_buscar(&table_nodes, dummy_node);
+            free(dummy_node);
+
             if (remote_node != NULL) {
                 // Si encontramos al vecino, sacamos el puerto real (que guardaste en origin_socket)
-                element->dest_port = remote_node->origin_socket; 
+                req->dest_port = remote_node->port; 
             } else {
-                element->dest_port = 4200; // Fallback por si el nodo recién arranca
+                req->dest_port = 4200; // Fallback por si el nodo recién arranca
             }
-            ReleaseJob(remote_node);
             
-            AddResource(newjob, element);
+            // we add it to the end of the linked list of resources for this job
+            if (newjob->next_req == NULL) {
+                newjob->next_req = req;
+            } else {
+                tail->next = req;
+            }
+            tail = req;
+            
+            
         }
 
-        JobsTableInsert(&table_ourjobs, newjob); // O 'ownjobs' si es global
+        tablahash_insertar(&table_ourjobs, newjob); // O 'ownjobs' si es global
 
         // ERROR CORREGIDO: La firma real de tu función es de 1 argumento
-        ask_for_next_resource(newjob);
-        ReleaseJob(newjob);
+        ask_for_next_resource(newjob); // we ask for the first resource, the rest will be asked in a chain
 
+        free(newjob); //since the implementation of the insert int the table already makes a copy of the job, we can free the original one.
     }
     /* ── JOB_RELEASE ─────────────────────────────────────────────── */
     else if (!strcmp(tokens[0], "JOB_RELEASE")) {

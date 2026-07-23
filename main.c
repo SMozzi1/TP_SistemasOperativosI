@@ -3,9 +3,12 @@
 
  /* Create the global queues made from the implementatiom,
  * since globals.h ask it as extern */
-p_queue_t cpu_queue;
-p_queue_t mem_queue;
-p_queue_t gpu_queue;
+
+request_queue* cpu_queue;
+request_queue* mem_queue;
+request_queue* gpu_queue;
+
+
 
 int main(int argc, char** argv) {
     int port ;
@@ -19,14 +22,14 @@ int main(int argc, char** argv) {
     initialize_connection_buffers(); // Initialize connection buffers and mutexes for all file descriptors
 
     /* 1. Iniciate the tables with the EXACT names of globals.h */
-    &table_ourjobs = create_table_jobs(); // local jobs table
-    &table_nodejobs = create_table_jobs(); // remote jobs table
-    &table_nodes = create_table_nodes(); // nodes that we are connected to table
+    table_ourjobs = create_table_fd_jobs(); // local jobs table
+    table_nodejobs = create_table_jobs(); // remote jobs table
+    table_nodes = create_table_nodes(); // nodes that we are connected to table
 
     /* 2. Iniciate the queues */
-    make_queue(&cpu_queue);
-    make_queue(&mem_queue);
-    make_queue(&gpu_queue);
+    cpu_queue = make_queue(4);  
+    mem_queue = make_queue(8192);
+    gpu_queue = make_queue(1)
 
      /* 3. Start with the main trail.
       * No need for declaring epollfd nor erlangd here since
