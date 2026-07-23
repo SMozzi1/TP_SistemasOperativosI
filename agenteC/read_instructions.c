@@ -180,4 +180,59 @@ char* get_udp_message(int fd){
     return NULL;
 }
 
+char* get_nodes_instance() {
 
+    pthread_mutex_lock(&hash_nodo->table_mutex);
+
+    size_t buffer_size = 8192;
+    char* result = malloc(buffer_size);
+
+    if (result == NULL) {
+        pthread_mutex_unlock(&hash_nodo->table_mutex);
+        return NULL;
+    }
+
+    int offset = snprintf(result, buffer_size, "NODES ");
+    int first = 1;  // para saber cuándo NO anteponer ';'
+
+    for (unsigned i = 0; i < hash_nodo->capacidad; i++) {
+        NodoLista* actual = hash_nodo->elems[i].lista;
+
+        while (actual != NULL) {
+            received_node* nodo = (received_node*)actual->dato;
+
+            // Separador ';' antes de cada nodo salvo el primero
+            if (!primero && (size_t)offset < buffer_size) {
+                offset += snprintf(result + offset, buffer_size - offset, ";");
+            }
+            primero = 0;
+
+            // Convertimos la IP de int a string legible para el protocolo
+            struct in_addr addr;
+            addr.s_addr = (uint32_t)nodo->ip;
+            char ip_str[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &addr, ip_str, sizeof(ip_str));
+
+            if ((size_t)offset < buffer_size) {
+                offset += snprintf(result + offset, buffer_size - offset,
+                                    "%s:%d:cpu:%d:mem:%d:gpu:%d",
+                                    ip_str,
+                                    nodo->port,
+                                    nodo->cpu,
+                                    nodo->mem,
+                                    nodo->gpu);
+            }
+
+            actual = actual->next;
+        }
+    }
+
+    pthread_mutex_unlock(&hash_nodo->table_mutex);
+
+    // Para que Erlang sepa dónde termina de escuchar
+    if ((size_t)offset < buffer_size - 1) {
+        snprintf(result + offset, buffer_size - offset, "\n");
+    }
+
+    return result;
+}

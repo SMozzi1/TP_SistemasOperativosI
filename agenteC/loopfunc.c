@@ -64,18 +64,23 @@ void connect_client(int fd, int epollfd){
 
 //C
 //Each queue have the resources 
-void udp_broadcast(int socket_UDP, int port, int cpu, int mem, int gpu) {
+void udp_broadcast(int socket_UDP, int port) {
     //We send a message whith our port and elements
     char msg[126];
-    pthread_mutex_lock(&);
+    pthread_mutex_lock(&cpu_queue->mutexQueue);
+    pthread_mutex_lock(&mem_queue->mutexQueue);
+    pthread_mutex_lock(&gpu_queue->mutexQueue);
+
+    int cpu = cpu_queue->resources_left;
+    int mem = mem_queue->resources_left;
+    int gpu = gpu_queue->resources_left;
 
     /*
-        Format: ANNOUNCE <port> <resources>
-        The sender IP is NOT in the payload; it is extracted
-        from recvfrom() by the receiving node.
+    Format: ANNOUNCE <port> <resources>
+    The sender IP is NOT in the payload; it is extracted
+    from recvfrom() by the receiving node.
     */
     snprintf(msg, sizeof(msg), "ANNOUNCE %d cpu:%d mem:%d gpu:%d\n", port, cpu, mem, gpu);
-    pthread_mutex_unlock(&mutex_resources);
 
     struct sockaddr_in bcast_addr;
     memset(&bcast_addr, 0, sizeof(bcast_addr));
@@ -84,13 +89,18 @@ void udp_broadcast(int socket_UDP, int port, int cpu, int mem, int gpu) {
     // comento esta linea ya que para testear en docker fijo una ip de la red virtual pero es la linea correspondiente
     bcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
     //bcast_addr.sin_addr.s_addr = inet_addr("10.5.255.255");
+    
     ssize_t sent = sendto(socket_UDP, msg, strlen(msg), 0,(struct sockaddr *)&bcast_addr, sizeof(bcast_addr));
 
+    //Check this
     if (sent < 0) 
         log_error("[UDP BCAST] sendto failed");
-    else 
+        else 
         printf("[UDP BCAST] Announcement sent: %s\n", msg);
-
+        
+    pthread_mutex_unlock(&cpu_queue->mutexQueue);
+    pthread_mutex_unlock(&mem_queue->mutexQueue);
+    pthread_mutex_unlock(&gpu_queue->mutexQueue);
 }
 
 //E

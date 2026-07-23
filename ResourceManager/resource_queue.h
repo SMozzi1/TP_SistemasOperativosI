@@ -38,7 +38,9 @@ void enqueue_request(request_queue* queue, request* request);
 
 request *dequeue_request(request_queue* queue);
 
+request* dequeue_request(request_queue* queue);
 
+request* try_dequeue(request_queue* queue);
 
 
 #endif /* RESOURCE_QUEUE_H */

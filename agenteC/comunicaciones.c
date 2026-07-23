@@ -44,7 +44,7 @@ void ask_for_next_resource(local_job_t* job)
             close(remote_fd);
             return;
         }
-        // we insert once we know the connection is established.
+        // we insert once we know the connection is establisshed
         job->origin_socket = remote_fd;
         // insert local job in the table
         tablahash_insert(&table_nodejobs, job);

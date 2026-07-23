@@ -60,8 +60,11 @@ void clear_connection_buffer(int fd);
  */
 int read_until_newline(int fd, char* output_line);
 
+/**
+ * to create the text of get nodes
+ */
 
-
+char* get_nodes_instance();
 
 
 

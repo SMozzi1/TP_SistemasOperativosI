@@ -11,9 +11,10 @@
 extern TablaHash hash_nodo;
 extern TablaHash hash_job;
 
-extern 
-extern
-extern
+extern request_queue cpu_queue;
+extern request_queue mem_queue;
+extern request_queue gpu_queue;
+
 
 extern int cpu_available;
 extern int mem_available;

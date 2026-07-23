@@ -52,15 +52,40 @@ void enqueue_request(request_queue* queue, request* request){
 //hacer dequeue_request
 //(basicamente si tengo los elementos para darle al request, entonces lo desencolo)
 request* dequeue_request(request_queue* queue) {
-
     pthread_mutex_lock(&queue->mutexQueue);
 
-    request* newRequest = queue->first;
-    queue->first = queue->first->next_req;
+    if (queue->first == NULL) {
+        pthread_mutex_unlock(&queue->mutexQueue);
+        return NULL;
+    }
 
+    request* req = queue->first;
+    queue->first = req->next_req;
+
+    if (queue->first == NULL)
+        queue->last = NULL;
 
     pthread_mutex_unlock(&queue->mutexQueue);
-    
+    return req;
+}
 
-    return newRequest;
+
+//Function to get the request if we have the resources
+request* try_dequeue(request_queue* queue) {
+    pthread_mutex_lock(&queue->mutexQueue);
+
+    if (queue->first == NULL ||
+        queue->first->amount_requested > queue->resources_left) {
+        pthread_mutex_unlock(&queue->mutexQueue);
+        return NULL;
+    }
+
+    request* req = queue->first;
+    queue->resources_left -= req->amount_requested;
+    queue->first = req->next_req;
+    if (queue->first == NULL)
+        queue->last = NULL;
+
+    pthread_mutex_unlock(&queue->mutexQueue);
+    return req;
 }
