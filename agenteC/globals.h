@@ -1,5 +1,5 @@
 #ifndef _GLOBALS_H_
-#define _GLOBALs_H_
+#define _GLOBALS_H_
 
 
 #include "../ResourceManager/hash.h"

@@ -187,13 +187,14 @@ char* get_nodes_instance() {
     size_t buffer_size = 8192;
     char* result = malloc(buffer_size);
 
+    //Si no se pudo reservar memoria
     if (result == NULL) {
         pthread_mutex_unlock(&table_nodes->table_mutex);
         return NULL;
     }
 
     int offset = snprintf(result, buffer_size, "NODES ");
-    int first = 1;  // para saber cuándo NO anteponer ';'
+    int first = 1;  // evitar poner ; al principio
 
     for (unsigned i = 0; i < table_nodes->capacidad; i++) {
         NodoLista* actual = table_nodes->elems[i].lista;

@@ -81,6 +81,15 @@ void C_to_erlang(const char *instruction, const char *job_id) {
     else if (!strcmp(instruction, "waiting"))  n = snprintf(msg, sizeof(msg), "WAITING %s\n",      job_id);
     else                                       n = snprintf(msg, sizeof(msg), "JOB_TIMEOUT %s\n",  job_id);
 
+    if (n < 0 || n >= (int)sizeof(msg)) {
+        fprintf(stderr, "[ERROR] C_to_erlang: message truncated\n");
+        return;
+    }
+
+    if (send(erlangfd, msg, n, MSG_DONTWAIT) < 0) {
+        perror("[ERROR] C_to_erlang: send");
+    }
+
 }
 
 

@@ -35,11 +35,11 @@ int make_timer(int initial_sec, int interval_sec, int epollfd) {
         close(tfd);
         fatal_error("timerfd_settime failed");
     }
-
+    
     struct epoll_event ev;
     ev.events  = EPOLLIN;
     ev.data.fd = tfd;
-
+    
     if (epoll_ctl(epollfd, EPOLL_CTL_ADD, tfd, &ev) < 0) {
         close(tfd);
         fatal_error("epoll_ctl ADD timer failed");
@@ -50,8 +50,62 @@ int make_timer(int initial_sec, int interval_sec, int epollfd) {
 
 
 
+time_t get_monotonic_time(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec;
+}
 
-void check_job_timeouts( , int timeout_sec) {
+
+
+
+//Esta es la que va con nuestra nueva implementacion
+void check_node_timeouts(TablaHash table_nodes){
+
+    if(table_nodes == NULL) return; 
+    
+    time_t acual_time = get_monotonic_time();
+
+    pthread_mutex_lock(&table_nodes->table_mutex);
+
+
+    for(int i = 0; i < table_nodes->capacidad; i++){
+
+        NodoLista* actual = table_nodes->elems[i].lista;
+        NodoLista* next_node = actual->next;
+
+         while (actual != NULL) {
+            received_node* nodo = (received_node*)actual->dato;
+
+            if(difftime(actual_time, nodo->time) >= NODE_TIMEOUT_SEC){
+
+                printf("[TIMEOUT] El nodo con ip %d se desconecto\n", nodo->ip);
+                
+                //Hacerla sin lock
+                tablahash_eliminar(table_nodes, (void*)nodo);
+
+            }
+            actual = next_node;
+        }
+        
+    }
+
+    pthread_mutex_unlock(&table_nodes->table_mutex);
+
+}
+
+
+
+
+void ceck_jobs_timeouts(TablaHash table_jobs){
+
+
+
+}
+
+
+
+void check_node_timeouts( , int timeout_sec) {
     if (tabla == NULL) return;
     time_t now = time(NULL);
 
@@ -79,7 +133,7 @@ void check_job_timeouts( , int timeout_sec) {
                         if (res->provider_fd >= 0) {
                             char msg[256];
                             snprintf(msg, sizeof(msg), "RELEASE %d %s %d\n",
-                                     j->job_id, res->type, res->amount);
+                            j->job_id, res->type, res->amount);
                             send(res->provider_fd, msg, strlen(msg), MSG_NOSIGNAL);
                             close(res->provider_fd);
                         }
@@ -93,7 +147,7 @@ void check_job_timeouts( , int timeout_sec) {
                         free(res);
                         res = next_res;
                     }
-
+                    
                     // 3) Close the leaving connection "on fly" (the one waiting GRANTED/DENIED
                     //    from the next asked resource). If the job never asked anything,
                     //    origin_socket keeps being erlangfd: do not touch.
@@ -101,32 +155,25 @@ void check_job_timeouts( , int timeout_sec) {
                         epoll_ctl(epollfd, EPOLL_CTL_DEL, j->origin_socket, NULL);
                         close(j->origin_socket);
                     }
-
+                    
                 } else if (tabla == &table_nodes) {
                     // The node stop announcing itself: we only remove it from the table.
                     // BEWARE: this resources are the ones announced by HIM, NOT OURS.
                     // Never should be added to cpu_available/mem_available/gpu_available.
                     DestroyGrantedList(j->resources);
                 }
-
+                
                 j->resources = NULL;
                 *pp = j->next_job;
                 tabla->active_count--;
                 ReleaseJob(j);
-
+                
             } else {
                 pp = &(*pp)->next_job;
             }
         }
     }
-
+    
     pthread_mutex_unlock(&tabla->mutexTable);
 }
 
-
-
-time_t get_monotonic_time(void) {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return ts.tv_sec;
-}

@@ -34,18 +34,17 @@ int gpu_available = 1;
 
 int epollfd = -1;
 int erlangfd = -1;
-active_jobs table_ourjobs;
 
 /* Mutex we use to prevent race condition */
 pthread_mutex_t mutex_resources = PTHREAD_MUTEX_INITIALIZER;
 
-received_job table_nodes;
-received_job table_clients;
+// active_jobs table_ourjobs;
+// received_job table_nodes;
+// received_job table_clients;
 
 
 
 #define MAX_EVENTS 64        // Maximum number of events epoll will process in a single wake-up
-
 #define NUM_WORKERS 4        // Number of threads in our Thread Pool
 
 
@@ -251,10 +250,6 @@ void setup_epoll(int port) {
      * returns -1 with errno=EPIPE instead of killing the process.  */
     signal(SIGPIPE, SIG_IGN);
 
-    // /* Initialize per-fd buffers and both job tables */
-    // memset(connections, 0, sizeof(connections));
-    // init_jobs_table(&table_nodes);
-    // init_jobs_table(&table_clients);
 
     /* Create the shared epoll instance */
     epollfd = epoll_create1(0);

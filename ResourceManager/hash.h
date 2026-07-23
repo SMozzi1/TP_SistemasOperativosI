@@ -8,13 +8,13 @@
 
 
 // resources structure
-
+//Inside local_job struct
 typedef struct pending_resource {
     char type[8];
     int amount;
     char dest_ip[16];
     int dest_port;
-    struct pending_resource *next;
+    struct pending_resource *next; //a list that have Node1 cpu-> Node2 mem -> Node3 gpu
 } pending_resource_t;
 
 
@@ -36,7 +36,7 @@ typedef struct _received_node
 
 }received_node;
 
-
+//Jobs we get after a reserve
 typedef struct _received_job
 {
     int id;
@@ -69,6 +69,7 @@ TablaHash create_table_jobs();
 
 /*
 * in this section we will have all the local jobs logistics that we receive from erlang
+Job_request logic
 */
 
 typedef struct {
