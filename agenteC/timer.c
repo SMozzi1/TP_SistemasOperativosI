@@ -49,7 +49,10 @@ int make_timer(int initial_sec, int interval_sec, int epollfd) {
 
 
 
-
+/*
+CLOCK_MONOTONIC avanza siempre hacia adelante, no se puede modificar,
+ no se ve afectado por cambios de hora. Es el reloj correcto para medir duraciones (timeouts, intervalos, etc.).
+*/
 time_t get_monotonic_time(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -81,7 +84,7 @@ void check_node_timeouts(TablaHash table_nodes){
 
                 printf("[TIMEOUT] El nodo con ip %d se desconecto\n", nodo->ip);
                 
-                //Hacerla sin lock
+                
                 tablahash_eliminar(table_nodes, (void*)nodo);
 
             }
@@ -97,8 +100,39 @@ void check_node_timeouts(TablaHash table_nodes){
 
 
 
-void ceck_jobs_timeouts(TablaHash table_jobs){
+void ceck_ourjobs_timeouts(TablaHash table_ourjob){
+    if (table_ourjobs == NULL) return;
+    time_t actual_time = get_monotonic_time();
 
+    pthread_mutex_lock(&table_ourjob->table_mutex);
+
+
+    for(int i = 0; i < table_ourjob->capacidad; i++){
+
+        NodoLista* actual_job = table_ourjob->elems[i].lista; // me devuelve un fd_job_entry
+        NodoLista* next_job = actual_job->next;
+
+         while (actual_job != NULL) {
+            local_job_t* job = (local_job_t*)actual_job->dato;
+
+            if(difftime(actual_time, job->time) >= JOB_TIMEOUT_SEC){
+
+                printf("[TIMEOUT] El job %d se desconecto\n", job->job_id);
+                
+                
+                //este es un caso particular ver bien porque deberia tambien eliminar la lista y devolver 
+                //todos los datos adquiridos
+                tablahash_eliminar(table_nodes, (void*)job); 
+                
+            }
+            actual = next_job;
+        }
+        
+    }
+
+
+
+    pthread_mutex_unlock(&table_ourjob->table_mutex);
 
 
 }

@@ -80,4 +80,6 @@ void *tablahash_buscar(TablaHash tabla, void *dato);
  */
 void tablahash_eliminar(TablaHash tabla, void *dato);
 
+void tablahash_eliminar_lock(TablaHash tabla, void *dato);
+
 #endif /* __TABLAHASH_H__ */

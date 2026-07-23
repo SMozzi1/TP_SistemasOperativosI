@@ -28,9 +28,6 @@
 
 
 // Inventory of available local resources.
-int cpu_available = 4;
-int mem_available = 8192;
-int gpu_available = 1;
 
 int epollfd = -1;
 int erlangfd = -1;
@@ -50,9 +47,6 @@ pthread_mutex_t mutex_resources = PTHREAD_MUTEX_INITIALIZER;
 
 #define BROADCAST_PORT 12529 
 //Need manualy be changed
-
-int JOB_TIMEOUT_SEC = 30;
-int NODE_TIMEOUT_SEC = 15;
 
 int socket_server;
 int socket_erlang;
@@ -199,8 +193,8 @@ static void* event_loop(void *arg) {
                     log_error("read timeout timer");
                     continue;
                 }
-                check_job_timeouts(&table_nodes, NODE_TIMEOUT_SEC);
-                check_job_timeouts(&table_ourjobs, JOB_TIMEOUT_SEC);
+                check_nodes_timeouts(&table_nodes);
+                check_ourjob_timeouts(&table_ourjobs);
             }
 
             /* ── E: incoming UDP datagram from another node ─────────── */

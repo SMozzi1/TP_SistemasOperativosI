@@ -19,12 +19,6 @@ extern request_queue* cpu_queue;
 extern request_queue* mem_queue;
 extern request_queue* gpu_queue;
 
-
-extern int cpu_available;
-extern int mem_available;
-extern int gpu_available;
-
-
 extern int epollfd;
 extern int erlangfd;
 

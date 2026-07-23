@@ -104,7 +104,7 @@ void *tablahash_buscar(TablaHash tabla, void *dato) {
 
 void tablahash_eliminar(TablaHash tabla, void *dato) {
 
-  pthread_mutex_lock(&tabla->table_mutex);
+  
   unsigned idx = tabla->hash(dato) % tabla->capacidad;
   NodoLista* actual = tabla->elems[idx].lista;
   NodoLista* prev = NULL;
@@ -128,5 +128,14 @@ void tablahash_eliminar(TablaHash tabla, void *dato) {
   free(actual);
   tabla->numElems--;
 
+
+}
+
+
+
+void tablahash_eliminar_lock(TablaHash tabla, void *dato) {
+
+  pthread_mutex_lock(&tabla->table_mutex);
+    tablahash_eliminar(tabla, dato);
   pthread_mutex_unlock(&tabla->table_mutex);
 }

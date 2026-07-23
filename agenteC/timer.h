@@ -26,7 +26,7 @@ int make_timer(int initial_sec, int interval_sec, int epollfd);
 
 
 
-void check_job_timeouts(active_jobs* tabla, int timeout_sec);
+void check_ourjob_timeouts(active_jobs* tabla, int timeout_sec);
 
 
 

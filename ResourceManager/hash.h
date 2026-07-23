@@ -65,7 +65,7 @@ void dest_job(void* data);
 TablaHash create_table_nodes();
 TablaHash create_table_jobs();
 
-/* --- Client --- */
+/* --- Client --- */ 
 
 /*
 * in this section we will have all the local jobs logistics that we receive from erlang
@@ -82,7 +82,7 @@ typedef struct {
 } local_job_t;
 
 typedef struct {
-    int fd;
+    int fd;  
     local_job_t *job;
 } fd_job_entry;
 

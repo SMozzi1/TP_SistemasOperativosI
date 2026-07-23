@@ -95,6 +95,8 @@ void C_to_erlang(const char *instruction, const char *job_id) {
 
 
 //Cambiar estructuras
+
+//(el campo de reserve deberia estar cambiado poruqe lo hizo mozzi)
 void client_to_myserver(int actual_fd, char *instruction) {    
     /* Work on a copy to avoid destroying the original buffer */
     char copy[BUFFER_LEN];
