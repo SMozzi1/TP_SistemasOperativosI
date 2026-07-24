@@ -44,14 +44,14 @@ void ask_for_next_resource(local_job_t* job)
     fd_job_entry entry;
     entry.fd  = remote_fd;
     entry.job = job;
-    tablahash_insertar(table_ourjobs, &entry);
+    tablahash_insert(table_ourjobs, &entry);
 
     struct epoll_event ev;
     ev.events  = EPOLLOUT | EPOLLET | EPOLLONESHOT;
     ev.data.fd = remote_fd;
     if (epoll_ctl(epollfd, EPOLL_CTL_ADD, remote_fd, &ev) < 0) {
         perror("[ERROR] epoll_ctl ADD");
-        tablahash_eliminar_lock(table_ourjobs, &entry);
+        tablahash_remove_lock(table_ourjobs, &entry);
         close(remote_fd);
         return;
     }
@@ -121,7 +121,7 @@ void client_to_myserver(int actual_fd, char *instruction) {
 
         fd_job_entry key;
         key.fd = actual_fd;
-        fd_job_entry* found = (fd_job_entry*) tablahash_buscar(table_ourjobs, &key);
+        fd_job_entry* found = (fd_job_entry*) tablahash_find(table_ourjobs, &key);
 
         if (found != NULL && found->job != NULL && found->job->job_id == received_job_id) {
             local_job_t* job = found->job;
@@ -142,7 +142,7 @@ void client_to_myserver(int actual_fd, char *instruction) {
              * later. Drop it from the fd index AND stop monitoring it in epoll, so
              * its lifetime is owned solely by release_resources(): no disconnect-path
              * close, no fd-number reuse, no cross-talk (B1). It stays open. */
-            tablahash_eliminar_lock(table_ourjobs, &key);
+            tablahash_remove_lock(table_ourjobs, &key);
             epoll_ctl(epollfd, EPOLL_CTL_DEL, actual_fd, NULL);
             ask_for_next_resource(job);
         }
@@ -155,18 +155,18 @@ void client_to_myserver(int actual_fd, char *instruction) {
         }
         fd_job_entry key;
         key.fd = actual_fd;
-        fd_job_entry* found = (fd_job_entry*) tablahash_buscar(table_ourjobs, &key);
+        fd_job_entry* found = (fd_job_entry*) tablahash_find(table_ourjobs, &key);
         if (found != NULL && found->job != NULL) {
             local_job_t* job = found->job;
 
-            tablahash_eliminar_lock(table_ourjobs, &key);
+            tablahash_remove_lock(table_ourjobs, &key);
             release_resources(job);
 
             char id_str[16];
             snprintf(id_str, sizeof(id_str), "%d", job->job_id);
             C_to_erlang("rejected", id_str);
 
-            tablahash_eliminar_lock(table_localjobs, job);
+            tablahash_remove_lock(table_localjobs, job);
         }
     }
 }
@@ -244,7 +244,7 @@ void erlang_to_C(char *instruction, time_t timer) {
             received_node node_key;
             memset(&node_key, 0, sizeof(node_key));
             node_key.ip = (int)inet_addr(dest_ip);
-            received_node* remote_node = (received_node*) tablahash_buscar(table_nodes, &node_key);
+            received_node* remote_node = (received_node*) tablahash_find(table_nodes, &node_key);
             req->dest_port = (remote_node != NULL) ? remote_node->port : 4200;
 
             if (newjob->next_req == NULL) newjob->next_req = req;
@@ -254,7 +254,7 @@ void erlang_to_C(char *instruction, time_t timer) {
 
         /* The owner table takes ownership of newjob (pointer-owning copy),
          * so we must NOT free it here. */
-        tablahash_insertar(table_localjobs, newjob);
+        tablahash_insert(table_localjobs, newjob);
         ask_for_next_resource(newjob);
     }
     /* ── JOB_RELEASE ─────────────────────────────────────────────── */
@@ -264,22 +264,22 @@ void erlang_to_C(char *instruction, time_t timer) {
 
         local_job_t job_key;
         job_key.job_id = job_id;
-        local_job_t* job = (local_job_t*) tablahash_buscar(table_localjobs, &job_key);
+        local_job_t* job = (local_job_t*) tablahash_find(table_localjobs, &job_key);
         if (job == NULL) return;
 
         /* If a request is still in flight, tear down its outbound socket. */
         if (job->origin_socket >= 0) {
             fd_job_entry fkey;
             fkey.fd = job->origin_socket;
-            if (tablahash_buscar(table_ourjobs, &fkey) != NULL) {
-                tablahash_eliminar_lock(table_ourjobs, &fkey);
+            if (tablahash_find(table_ourjobs, &fkey) != NULL) {
+                tablahash_remove_lock(table_ourjobs, &fkey);
                 epoll_ctl(epollfd, EPOLL_CTL_DEL, job->origin_socket, NULL);
                 close(job->origin_socket);
             }
         }
 
         release_resources(job);                     // RELEASE to each provider
-        tablahash_eliminar_lock(table_localjobs, job); // frees job + lists
+        tablahash_remove_lock(table_localjobs, job); // frees job + lists
     }
     /* ── JOB_STATUS ──────────────────────────────────────────────── */
     else if (!strcmp(tokens[0], "JOB_STATUS")) {
@@ -288,7 +288,7 @@ void erlang_to_C(char *instruction, time_t timer) {
 
         local_job_t job_key;
         job_key.job_id = job_id;
-        local_job_t* job = (local_job_t*) tablahash_buscar(table_localjobs, &job_key);
+        local_job_t* job = (local_job_t*) tablahash_find(table_localjobs, &job_key);
 
         if (job == NULL) {
             /* Completed, rejected or expired: no "unknown" state in the protocol,

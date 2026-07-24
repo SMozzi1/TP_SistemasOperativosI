@@ -49,13 +49,13 @@ void dest_job(void* data){
 }
 
 TablaHash create_table_nodes(){
-    return tablahash_crear(copy_node, comp_node, destr_node, func_hash_node);
+    return tablahash_create(copy_node, comp_node, destr_node, func_hash_node);
 }
 
 
 //
 TablaHash create_table_jobs(){
-    return tablahash_crear(copy_job, comp_job, dest_job, func_hash_job);
+    return tablahash_create(copy_job, comp_job, dest_job, func_hash_job);
 }
 
 
@@ -82,7 +82,7 @@ void *copy_fd(void *data) {
 void destr_fd(void *data) { free(data); }
 
 TablaHash create_table_fd_jobs() {
-    return tablahash_crear(copy_fd, comp_fd, destr_fd, func_hash_fd);
+    return tablahash_create(copy_fd, comp_fd, destr_fd, func_hash_fd);
 }
 
 
@@ -124,5 +124,5 @@ void destr_localjob(void *data) {
 }
 
 TablaHash create_table_local_jobs() {
-    return tablahash_crear(copy_localjob, comp_localjob, destr_localjob, func_hash_localjob);
+    return tablahash_create(copy_localjob, comp_localjob, destr_localjob, func_hash_localjob);
 }

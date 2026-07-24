@@ -128,7 +128,7 @@ void udp_datagram_from_remote(int fd){
     nodo.time = get_monotonic_time();
 
     //if it is new then it insert in hash_nodes, otherwise replace it 
-    tablahash_insertar(table_nodes, (void*)&nodo);
+    tablahash_insert(table_nodes, (void*)&nodo);
     printf("[UDP E] Received ANNOUNCE from %s:%d - cpu:%d mem:%d gpu:%d\n",
            inet_ntoa(sender.sin_addr), port, nodo.cpu, nodo.mem, nodo.gpu);
 }
@@ -167,7 +167,7 @@ void send_request(int fd, int epollfd){
     // Find the local job that owns this outbound FD via the fd index.
     fd_job_entry key;
     key.fd = fd;
-    fd_job_entry* found = (fd_job_entry*) tablahash_buscar(table_ourjobs, &key);
+    fd_job_entry* found = (fd_job_entry*) tablahash_find(table_ourjobs, &key);
 
     if (found != NULL && found->job != NULL && found->job->next_req != NULL) {
         local_job_t* job = found->job;

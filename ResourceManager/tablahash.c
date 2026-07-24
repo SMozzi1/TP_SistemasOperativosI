@@ -4,7 +4,7 @@
 /**
  * Crea una nueva tabla hash vacia, con la capacidad dada.
  */
-TablaHash tablahash_crear(FuncionCopiadora copia,
+TablaHash tablahash_create(FuncionCopiadora copia,
                           FuncionComparadora comp, FuncionDestructora destr,
                           FuncionHash hash) {
 
@@ -40,11 +40,11 @@ int tablahash_nelems(TablaHash tabla) {
 
 
 
-int tablahash_capacidad(TablaHash tabla) { return tabla->capacidad; }
+int tablahash_capacity(TablaHash tabla) { return tabla->capacidad; }
 
 
 
-void tablahash_destruir(TablaHash tabla) {
+void tablahash_destroy(TablaHash tabla) {
   for (unsigned idx = 0; idx < tabla->capacidad; ++idx) {
     NodoLista *actual = tabla->elems[idx].lista;
     while (actual != NULL) {
@@ -60,7 +60,7 @@ void tablahash_destruir(TablaHash tabla) {
   free(tabla);
 }
 
-static NodoLista *buscar_en_lista(TablaHash tabla, NodoLista *lista, void *dato) {
+static NodoLista *find_in_list(TablaHash tabla, NodoLista *lista, void *dato) {
   NodoLista *actual = lista;
   while (actual != NULL) {
     if (tabla->comp(actual->dato, dato) == 0)
@@ -70,11 +70,11 @@ static NodoLista *buscar_en_lista(TablaHash tabla, NodoLista *lista, void *dato)
   return NULL;
 }
 
-void tablahash_insertar(TablaHash tabla, void *dato) {
+void tablahash_insert(TablaHash tabla, void *dato) {
 
   pthread_mutex_lock(&tabla->table_mutex);
   unsigned idx = tabla->hash(dato) % tabla->capacidad;
-  NodoLista* existente = buscar_en_lista(tabla, tabla->elems[idx].lista, dato);
+  NodoLista* existente = find_in_list(tabla, tabla->elems[idx].lista, dato);
 
   if (existente != NULL) {
     tabla->destr(existente->dato);
@@ -90,11 +90,11 @@ void tablahash_insertar(TablaHash tabla, void *dato) {
   pthread_mutex_unlock(&tabla->table_mutex);
 }
 
-void *tablahash_buscar(TablaHash tabla, void *dato) {
+void *tablahash_find(TablaHash tabla, void *dato) {
 
   pthread_mutex_lock(&tabla->table_mutex);
   unsigned idx = tabla->hash(dato) % tabla->capacidad;
-  NodoLista* encontrado = buscar_en_lista(tabla, tabla->elems[idx].lista, dato);
+  NodoLista* encontrado = find_in_list(tabla, tabla->elems[idx].lista, dato);
 
   void* data = (encontrado != NULL) ? encontrado->dato : NULL;
 
@@ -102,9 +102,9 @@ void *tablahash_buscar(TablaHash tabla, void *dato) {
   return data;
 }
 
-void tablahash_eliminar(TablaHash tabla, void *dato) {
+void tablahash_remove(TablaHash tabla, void *dato) {
 
-  
+
   unsigned idx = tabla->hash(dato) % tabla->capacidad;
   NodoLista* actual = tabla->elems[idx].lista;
   NodoLista* prev = NULL;
@@ -115,7 +115,7 @@ void tablahash_eliminar(TablaHash tabla, void *dato) {
   }
 
   /* Not found: nothing to do. Do NOT unlock here — this function assumes the
-   * caller (tablahash_eliminar_lock) holds the mutex and will release it. */
+   * caller (tablahash_remove_lock) holds the mutex and will release it. */
   if (actual == NULL) {
     return;
   }
@@ -134,9 +134,9 @@ void tablahash_eliminar(TablaHash tabla, void *dato) {
 
 
 
-void tablahash_eliminar_lock(TablaHash tabla, void *dato) {
+void tablahash_remove_lock(TablaHash tabla, void *dato) {
 
   pthread_mutex_lock(&tabla->table_mutex);
-    tablahash_eliminar(tabla, dato);
+    tablahash_remove(tabla, dato);
   pthread_mutex_unlock(&tabla->table_mutex);
 }

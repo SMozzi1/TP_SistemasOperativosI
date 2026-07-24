@@ -77,10 +77,10 @@ void check_nodes_timeouts(TablaHash table) {
             received_node* nodo = (received_node*)(*pp)->dato;
             if (difftime(now, nodo->time) >= NODE_TIMEOUT_SEC) {
                 printf("[TIMEOUT] Nodo ip=%d eliminado por inactividad\n", nodo->ip);
-                NodoLista* victim = *pp;
-                *pp = victim->next;
-                table->destr(victim->dato);
-                free(victim);
+                NodoLista* to_remove = *pp;
+                *pp = to_remove->next;
+                table->destr(to_remove->dato);
+                free(to_remove);
                 table->numElems--;
             } else {
                 pp = &(*pp)->next;
@@ -98,7 +98,7 @@ void check_nodes_timeouts(TablaHash table) {
  *
  * We collect the expired ids UNDER the table lock, then process them AFTER
  * releasing it, because the per-job cleanup (release_resources, C_to_erlang and
- * tablahash_eliminar_lock) takes locks that would otherwise deadlock or violate
+ * tablahash_remove_lock) takes locks that would otherwise deadlock or violate
  * the lock order.
  */
 void check_ourjob_timeouts(TablaHash table) {
@@ -127,7 +127,7 @@ void check_ourjob_timeouts(TablaHash table) {
     for (int k = 0; k < count; k++) {
         local_job_t job_key;
         job_key.job_id = expired[k];
-        local_job_t* job = (local_job_t*) tablahash_buscar(table, &job_key);
+        local_job_t* job = (local_job_t*) tablahash_find(table, &job_key);
         if (job == NULL) continue;   // already resolved between passes
 
         char id_str[16];
@@ -138,8 +138,8 @@ void check_ourjob_timeouts(TablaHash table) {
         if (job->origin_socket >= 0) {
             fd_job_entry fkey;
             fkey.fd = job->origin_socket;
-            if (tablahash_buscar(table_ourjobs, &fkey) != NULL) {
-                tablahash_eliminar_lock(table_ourjobs, &fkey);
+            if (tablahash_find(table_ourjobs, &fkey) != NULL) {
+                tablahash_remove_lock(table_ourjobs, &fkey);
                 epoll_ctl(epollfd, EPOLL_CTL_DEL, job->origin_socket, NULL);
                 close(job->origin_socket);
             }
@@ -147,6 +147,6 @@ void check_ourjob_timeouts(TablaHash table) {
 
         release_resources(job);                        // release partial reservations
         C_to_erlang("timeout", id_str);                // ask Erlang to relaunch
-        tablahash_eliminar_lock(table_localjobs, job); // frees job + lists
+        tablahash_remove_lock(table_localjobs, job); // frees job + lists
     }
 }

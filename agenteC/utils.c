@@ -85,7 +85,7 @@ static void record_granted(int job_id, int origin_socket, const char* type, int 
     key.port = port;
 
     received_job rj;
-    received_job* existing = (received_job*) tablahash_buscar(table_nodejobs, &key);
+    received_job* existing = (received_job*) tablahash_find(table_nodejobs, &key);
     if (existing != NULL) {
         rj = *existing;
     } else {
@@ -100,7 +100,7 @@ static void record_granted(int job_id, int origin_socket, const char* type, int 
     else if (!strcmp(type, "mem")) rj.mem_granted += amount;
     else                           rj.gpu_granted += amount;
 
-    tablahash_insertar(table_nodejobs, &rj); // deep-copies (received_job is a POD)
+    tablahash_insert(table_nodejobs, &rj); // deep-copies (received_job is a POD)
 }
 
 
@@ -172,10 +172,10 @@ void release_client_by_fd(int fd) {
                 add_mem += job->mem_granted;
                 add_gpu += job->gpu_granted;
 
-                NodoLista* victim = *pp;
-                *pp = victim->next;
-                table_nodejobs->destr(victim->dato);
-                free(victim);
+                NodoLista* to_remove = *pp;
+                *pp = to_remove->next;
+                table_nodejobs->destr(to_remove->dato);
+                free(to_remove);
                 table_nodejobs->numElems--;
             } else {
                 pp = &(*pp)->next;
@@ -204,7 +204,7 @@ void release_client_by_fd(int fd) {
 void handle_outbound_disconnect(int fd) {
     fd_job_entry key;
     key.fd = fd;
-    fd_job_entry* entry = (fd_job_entry*) tablahash_buscar(table_ourjobs, &key);
+    fd_job_entry* entry = (fd_job_entry*) tablahash_find(table_ourjobs, &key);
     if (entry == NULL || entry->job == NULL) return;
 
     local_job_t* job = entry->job;
@@ -214,7 +214,7 @@ void handle_outbound_disconnect(int fd) {
             job_id);
 
     /* drop the fd index entry (does not free the job) */
-    tablahash_eliminar_lock(table_ourjobs, &key);
+    tablahash_remove_lock(table_ourjobs, &key);
 
     /* release what other providers already granted */
     release_resources(job);
@@ -224,5 +224,5 @@ void handle_outbound_disconnect(int fd) {
     C_to_erlang("rejected", id_str);
 
     /* finally free the job via its owner table */
-    tablahash_eliminar_lock(table_localjobs, job);
+    tablahash_remove_lock(table_localjobs, job);
 }
