@@ -63,17 +63,14 @@ void connect_client(int fd, int epollfd){
 }
 
 //C
-// Announces this node's OWN free resources (the global counters, guarded by
-// mutex_resources). The queues only hold waiting peer requests, so they are
-// not read here.
+// Announces this node's OWN free resources, read from each queue's
+// resources_left under its own mutexQueue (best-effort snapshot).
 void udp_broadcast(int socket_UDP, int port) {
     char msg[126];
 
-    pthread_mutex_lock(&mutex_resources);
-    int cpu = cpu_available;
-    int mem = mem_available;
-    int gpu = gpu_available;
-    pthread_mutex_unlock(&mutex_resources);
+    pthread_mutex_lock(&cpu_queue->mutexQueue); int cpu = cpu_queue->resources_left; pthread_mutex_unlock(&cpu_queue->mutexQueue);
+    pthread_mutex_lock(&mem_queue->mutexQueue); int mem = mem_queue->resources_left; pthread_mutex_unlock(&mem_queue->mutexQueue);
+    pthread_mutex_lock(&gpu_queue->mutexQueue); int gpu = gpu_queue->resources_left; pthread_mutex_unlock(&gpu_queue->mutexQueue);
 
     /*
     Format: ANNOUNCE <port> <resources>
@@ -132,7 +129,8 @@ void udp_datagram_from_remote(int fd){
 
     //if it is new then it insert in hash_nodes, otherwise replace it 
     tablahash_insertar(table_nodes, (void*)&nodo);
-
+    printf("[UDP E] Received ANNOUNCE from %s:%d - cpu:%d mem:%d gpu:%d\n",
+           inet_ntoa(sender.sin_addr), port, nodo.cpu, nodo.mem, nodo.gpu);
 }
 
 //F
@@ -148,7 +146,7 @@ void message_from_erlang(int fd, int epollfd){
     }
     
     if (result == -1) {
-        log_error("[EVENT F] Erlang disconnected");
+        fprintf(stderr, "[EVENT F] Erlang disconnected\n");
         epoll_ctl(epollfd, EPOLL_CTL_DEL, erlangfd, NULL);
         close(erlangfd);
         clear_connection_buffer(erlangfd);
@@ -195,9 +193,11 @@ void send_request(int fd, int epollfd){
 //H
 void recive_message_from_remote(int fd, int epollfd){
     char line[BUFFER_LEN];
-    int result = read_until_newline(fd, line);
+    int result;
 
-    if (result == 1) {
+    /* Drain every complete line already available (messages can arrive
+     * coalesced, and edge-triggered outbound sockets require full draining). */
+    while ((result = read_until_newline(fd, line)) == 1) {
         printf("[REMOTE ->] fd=%d: %s", fd, line);
         /*
             Dispatch based on content:
@@ -205,9 +205,10 @@ void recive_message_from_remote(int fd, int epollfd){
             - GRANTED/DENIED  -> reply to a RESERVE we sent
         */
         client_to_myserver(fd, line);
+    }
 
-    } else if (result == -1) {
-        fprintf(stderr, "[EVENT G] Remote node fd=%d disconnected\n", fd);
+    if (result == -1) {
+        fprintf(stderr, "[EVENT H] Remote node fd=%d disconnected\n", fd);
         release_client_by_fd(fd);          // release what you had reserved for this fd
         handle_outbound_disconnect(fd);    // in case we call ourselves
         epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL); //then deleate from epoll

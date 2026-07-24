@@ -105,31 +105,28 @@ static void record_granted(int job_id, int origin_socket, const char* type, int 
 
 
 /*
- * Drains one resource FIFO: grants as many head requests as *avail allows.
+ * Drains one resource FIFO: grants as many head requests as q->resources_left
+ * allows.
  *
  * Concurrency:
- *  - The check (*avail >= head->amount) and the two mutations (dequeue and
- *    avail -=) run with BOTH locks held, so the decision is atomic.
- *  - Lock order is always mutex_resources -> mutexQueue; nothing takes them in
- *    reverse, so there is no deadlock.
- *  - The slow work (table insert + send) happens AFTER both locks are released;
- *    we never hold mutex_resources while touching a table mutex.
+ *  - The check (resources_left >= head->amount) and the two mutations (dequeue
+ *    and resources_left -=) run under q->mutexQueue, so the decision is atomic
+ *    under a SINGLE lock (availability and the waiters live in the same queue).
+ *  - The slow work (table insert + send) happens AFTER the lock is released.
  */
-void drain_queue(request_queue* q, int* avail, const char* type) {
+void drain_queue(request_queue* q, const char* type) {
     request* ready = NULL;   /* stash of granted requests, linked by next_req */
 
-    pthread_mutex_lock(&mutex_resources);
     pthread_mutex_lock(&q->mutexQueue);
-    while (q->first != NULL && *avail >= q->first->amount_requested) {
+    while (q->first != NULL && q->resources_left >= q->first->amount_requested) {
         request* req = dequeue_request_locked(q);
-        *avail -= req->amount_requested;
+        q->resources_left -= req->amount_requested;
         req->next_req = ready;
         ready = req;
     }
     pthread_mutex_unlock(&q->mutexQueue);
-    pthread_mutex_unlock(&mutex_resources);
 
-    /* ---- outside the locks ---- */
+    /* ---- outside the lock ---- */
     while (ready != NULL) {
         request* req = ready;
         ready = ready->next_req;
@@ -148,9 +145,9 @@ void drain_queue(request_queue* q, int* avail, const char* type) {
 
 
 void reserve_elements(void) {
-    drain_queue(cpu_queue, &cpu_available, "cpu");
-    drain_queue(mem_queue, &mem_available, "mem");
-    drain_queue(gpu_queue, &gpu_available, "gpu");
+    drain_queue(cpu_queue, "cpu");
+    drain_queue(mem_queue, "mem");
+    drain_queue(gpu_queue, "gpu");
 }
 
 
@@ -161,8 +158,9 @@ void reserve_elements(void) {
  * no-op.
  */
 void release_client_by_fd(int fd) {
-    int found_any = 0;
+    int add_cpu = 0, add_mem = 0, add_gpu = 0, found_any = 0;
 
+    /* Collect the amounts and drop the entries under the table lock only. */
     pthread_mutex_lock(&table_nodejobs->table_mutex);
     for (unsigned i = 0; i < table_nodejobs->capacidad; i++) {
         NodoLista** pp = &table_nodejobs->elems[i].lista;
@@ -170,12 +168,9 @@ void release_client_by_fd(int fd) {
             received_job* job = (received_job*)(*pp)->dato;
             if (job->original_socket == fd) {
                 found_any = 1;
-
-                pthread_mutex_lock(&mutex_resources);
-                cpu_available += job->cpu_granted;
-                mem_available += job->mem_granted;
-                gpu_available += job->gpu_granted;
-                pthread_mutex_unlock(&mutex_resources);
+                add_cpu += job->cpu_granted;
+                add_mem += job->mem_granted;
+                add_gpu += job->gpu_granted;
 
                 NodoLista* victim = *pp;
                 *pp = victim->next;
@@ -189,7 +184,15 @@ void release_client_by_fd(int fd) {
     }
     pthread_mutex_unlock(&table_nodejobs->table_mutex);
 
-    if (found_any) reserve_elements();
+    if (!found_any) return;
+
+    /* Give the amounts back to each queue (each under its own mutexQueue, not
+     * nested inside the table lock), then re-drain the waiting requests. */
+    pthread_mutex_lock(&cpu_queue->mutexQueue); cpu_queue->resources_left += add_cpu; pthread_mutex_unlock(&cpu_queue->mutexQueue);
+    pthread_mutex_lock(&mem_queue->mutexQueue); mem_queue->resources_left += add_mem; pthread_mutex_unlock(&mem_queue->mutexQueue);
+    pthread_mutex_lock(&gpu_queue->mutexQueue); gpu_queue->resources_left += add_gpu; pthread_mutex_unlock(&gpu_queue->mutexQueue);
+
+    reserve_elements();
 }
 
 

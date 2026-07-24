@@ -114,8 +114,9 @@ void tablahash_eliminar(TablaHash tabla, void *dato) {
     actual = actual->next;
   }
 
+  /* Not found: nothing to do. Do NOT unlock here — this function assumes the
+   * caller (tablahash_eliminar_lock) holds the mutex and will release it. */
   if (actual == NULL) {
-    pthread_mutex_unlock(&tabla->table_mutex);
     return;
   }
 

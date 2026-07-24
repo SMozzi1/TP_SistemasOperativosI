@@ -22,16 +22,11 @@ extern TablaHash table_ourjobs;
 extern TablaHash table_nodejobs;
 extern TablaHash table_nodes;
 
+/* Each queue carries this node's free amount of its resource (resources_left)
+ * plus the FIFO of peers waiting for it, both guarded by its own mutexQueue. */
 extern request_queue* cpu_queue;
 extern request_queue* mem_queue;
 extern request_queue* gpu_queue;
-
-/* This agent's own free resources. Every access MUST hold mutex_resources
- * because the NUM_WORKERS worker threads touch them concurrently. */
-extern int cpu_available;
-extern int mem_available;
-extern int gpu_available;
-extern pthread_mutex_t mutex_resources;
 
 extern int epollfd;
 extern int erlangfd;

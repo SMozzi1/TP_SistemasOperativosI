@@ -23,10 +23,11 @@ void destr_request(request* req){
 }
 
 
-request_queue *make_queue(void){
+request_queue *make_queue(int resources){
 
     request_queue* newQueue = malloc(sizeof(struct p_queue_t));
     assert(newQueue != NULL);
+    newQueue->resources_left = resources;
     newQueue->first = NULL;
     newQueue->last = NULL;
     pthread_mutex_init(&newQueue->mutexQueue, NULL);
@@ -53,8 +54,8 @@ void enqueue_request(request_queue* queue, request* request){
 
 /*
  * Pops the head of the queue. The caller MUST already hold queue->mutexQueue
- * (drain_queue holds both mutex_resources and mutexQueue while deciding, so it
- * cannot use a self-locking dequeue).
+ * (drain_queue holds mutexQueue across the check-and-dequeue, so it cannot use
+ * a self-locking dequeue).
  */
 request* dequeue_request_locked(request_queue* queue) {
     if (queue->first == NULL)

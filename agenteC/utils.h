@@ -36,7 +36,7 @@ void release_resources(local_job_t* job);
 /* Server side: a remote RESERVE arrived; enqueue it and try to grant. */
 void enqueue_jobs(const char* resource, int job_id, int amount, int fd_actual);
 void reserve_elements(void);
-void drain_queue(request_queue* q, int* avail, const char* type);
+void drain_queue(request_queue* q, const char* type);
 
 
 /* Server side: return to the local pool everything reserved on this fd

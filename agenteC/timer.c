@@ -35,8 +35,14 @@ int make_timer(int initial_sec, int interval_sec, int epollfd) {
         fatal_error("timerfd_settime failed");
     }
 
+    /* EPOLLONESHOT: the kernel delivers each expiration to EXACTLY ONE worker
+     * and then disables the fd until it is re-armed. This is a hard guarantee
+     * (unlike best-effort EPOLLEXCLUSIVE, which valgrind's thread serialization
+     * defeats), so the ANNOUNCE fires once per tick. The handler in event_loop
+     * must re-arm the fd (EPOLL_CTL_MOD) after draining it, or it never fires
+     * again. NOTE: EPOLLONESHOT and EPOLLEXCLUSIVE cannot be combined (EINVAL). */
     struct epoll_event ev;
-    ev.events  = EPOLLIN;
+    ev.events  = EPOLLIN | EPOLLONESHOT;
     ev.data.fd = tfd;
 
     if (epoll_ctl(epollfd, EPOLL_CTL_ADD, tfd, &ev) < 0) {

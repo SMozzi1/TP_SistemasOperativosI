@@ -63,38 +63,41 @@ int read_until_newline(int fd, char *output_line) {
     char  *storage = connections[fd].buffer;
     int   *acc     = &connections[fd].accumulated_bytes;
 
-    int space = BUFFER_LEN - *acc - 1;
-    
-    if (space <= 0) {
-        fprintf(stderr, "[WARN] read_until_newline: buffer full on fd=%d, resetting\n", fd);
-        *acc = 0;
-        space = BUFFER_LEN - 1;
-    }
+    /* First, check whether a complete line is ALREADY buffered (e.g. two lines
+     * arrived coalesced in a previous recv). If so, return it without reading —
+     * otherwise a following recv could hit EAGAIN and strand the buffered line. */
+    char *nl = (*acc > 0) ? strchr(storage, '\n') : NULL;
 
-    char temp[1024];
-    int  n = recv(fd, temp, space, 0);
+    if (nl == NULL) {
+        /* Nothing complete buffered: try to read more from the socket. */
+        int space = BUFFER_LEN - *acc - 1;
 
-    if (n == 0){
-        pthread_mutex_unlock(&connections[fd].connlock);  // Unlock before returning
-        return -1;  /* Peer closed the connection */
-    }
-
-    if (n < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-        {
-            pthread_mutex_unlock(&connections[fd].connlock);  // Unlock before returning
-            return 0;
+        if (space <= 0) {
+            fprintf(stderr, "[WARN] read_until_newline: buffer full on fd=%d, resetting\n", fd);
+            *acc = 0;
+            storage[0] = '\0';
+            space = BUFFER_LEN - 1;
         }
-        pthread_mutex_unlock(&connections[fd].connlock);  // Unlock before returning
-        return -1;
+
+        char temp[1024];
+        int  n = recv(fd, temp, space, 0);
+
+        if (n == 0){
+            pthread_mutex_unlock(&connections[fd].connlock);  // Unlock before returning
+            return -1;  /* Peer closed the connection */
+        }
+
+        if (n < 0) {
+            pthread_mutex_unlock(&connections[fd].connlock);  // Unlock before returning
+            return (errno == EAGAIN || errno == EWOULDBLOCK) ? 0 : -1;
+        }
+
+        memcpy(&storage[*acc], temp, n);
+        *acc += n;
+        storage[*acc] = '\0';
+
+        nl = strchr(storage, '\n');
     }
-
-    memcpy(&storage[*acc], temp, n);
-    *acc += n;
-    storage[*acc] = '\0';
-
-    /* Searches for the first newline character in the accumulated buffer. */
-    char *nl = strchr(storage, '\n');
 
     /* If a complete line is detected (nl != NULL). */
     if (nl != NULL) {

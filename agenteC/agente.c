@@ -32,13 +32,6 @@
 int epollfd = -1;
 int erlangfd = -1;
 
-/* Mutex we use to prevent race condition */
-pthread_mutex_t mutex_resources = PTHREAD_MUTEX_INITIALIZER;
-
-// active_jobs table_ourjobs;
-// received_job table_nodes;
-// received_job table_clients;
-
 
 
 #define MAX_EVENTS 64        // Maximum number of events epoll will process in a single wake-up
@@ -168,10 +161,9 @@ static void* event_loop(void *arg) {
 
             /* ── C: UDP broadcast timer fired. send a message ───────────────────────── */
             else if (fd == args->broadcast_timer_fd) {
-                
-                /*  Must read the timer fd to clear its readable state;
-                otherwise epoll keeps waking us up in a busy loop.  
-                */
+
+                /*  Must read the timer fd to drain its expiration counter, so the
+                    re-arm below waits for the NEXT tick instead of re-firing now. */
                uint64_t exp;
                if (read(fd, &exp, sizeof(exp)) < 0 && errno != EAGAIN) {
                    log_error("read broadcast timer");
@@ -180,6 +172,13 @@ static void* event_loop(void *arg) {
 
                 udp_broadcast(socket_UDP, port);
 
+                /* EPOLLONESHOT disabled this fd on delivery; re-arm it so it fires
+                   again next period (still delivered to exactly one worker). */
+                struct epoll_event rearm;
+                rearm.events  = EPOLLIN | EPOLLONESHOT;
+                rearm.data.fd = fd;
+                epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &rearm);
+
             }
 
             /* ── D: job timeout timer fired ─────────────────────────── */
@@ -187,7 +186,7 @@ static void* event_loop(void *arg) {
                 Reads the timer file descriptor to clear its state and invokes timeout 
                 checks for both remote node jobs and local jobs.
             */
-            else if (fd == args->timeout_timer_fd) { 
+            else if (fd == args->timeout_timer_fd) {
                 uint64_t exp;
                 if (read(fd, &exp, sizeof(exp)) < 0 && errno != EAGAIN) {
                     log_error("read timeout timer");
@@ -195,6 +194,12 @@ static void* event_loop(void *arg) {
                 }
                 check_nodes_timeouts(table_nodes);
                 check_ourjob_timeouts(table_localjobs);
+
+                /* Re-arm the one-shot timer for the next period. */
+                struct epoll_event rearm;
+                rearm.events  = EPOLLIN | EPOLLONESHOT;
+                rearm.data.fd = fd;
+                epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &rearm);
             }
 
             /* ── E: incoming UDP datagram from another node ─────────── */
@@ -276,9 +281,10 @@ void setup_epoll(int port) {
         1. broadcast_timer -> sends ANNOUNCE via UDP every 5 s (first fire: 1 s)
         2. timeout_timer   -> checks expired jobs every 5 s   (first fire: 5 s)
      
-         Both timers are shared across all worker threads. Because epoll delivers
-        a timer event to exactly one thread at a time, no extra locking is needed
-        for the timer read itself (check_job_timeouts uses its own mutex internally).
+         Both timers are shared across all worker threads and registered with
+        EPOLLONESHOT (see make_timer), so each expiration is delivered to exactly
+        one worker; that worker re-arms the fd after handling it. No extra locking
+        is needed for the timer read itself.
     */
     static worker_args_t args;  /* static so it outlives this stack frame */
     args.broadcast_timer_fd = make_timer(1, 5, epollfd);
