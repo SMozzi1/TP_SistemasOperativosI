@@ -28,7 +28,7 @@ void release_resources(local_job_t* job)
                      job->job_id, granted->type, granted->amount);
             send(granted->provider_fd, msg, strlen(msg), MSG_NOSIGNAL);
 
-            printf("[INFO] RELEASE del recurso %s enviado al fd=%d (job %d)\n",
+            printf("[INFO] RELEASE of resource %s sent to fd=%d (job %d)\n",
                    granted->type, granted->provider_fd, job->job_id);
 
             epoll_ctl(epollfd, EPOLL_CTL_DEL, granted->provider_fd, NULL);
@@ -137,7 +137,7 @@ void drain_queue(request_queue* q, const char* type) {
         int n = snprintf(msg, sizeof(msg), "GRANTED %d\n", req->job_id);
         send(req->origin_socket, msg, n, MSG_NOSIGNAL);
 
-        printf("[SERVER] Job %d: %s otorgada (registrada en table_nodejobs)\n",
+        printf("[SERVER] Job %d: %s granted (recorded in table_nodejobs)\n",
                req->job_id, type);
         destr_request(req);
     }
@@ -210,7 +210,7 @@ void handle_outbound_disconnect(int fd) {
     local_job_t* job = entry->job;
     int job_id = job->job_id;
 
-    fprintf(stderr, "[WARN] Job %d: proveedor remoto se desconectó sin responder. Rechazado.\n",
+    fprintf(stderr, "[WARN] Job %d: remote provider disconnected without answering. Rejected.\n",
             job_id);
 
     /* drop the fd index entry (does not free the job) */
@@ -226,3 +226,24 @@ void handle_outbound_disconnect(int fd) {
     /* finally free the job via its owner table */
     tablahash_remove_lock(table_localjobs, job);
 }
+
+
+
+/*
+ * Re-arms an already-registered fd for EPOLLIN|EPOLLONESHOT. ENOENT is tolerated
+ * because it just means the fd was removed from epoll in the meantime (e.g. a
+ * GRANTED turned an outbound socket into a held provider connection, see B1).
+ * This is for RE-ARMING (EPOLL_CTL_MOD), not for adding a new fd, and only for
+ * the plain EPOLLIN|EPOLLONESHOT case (not the EPOLLET outbound sockets).
+ */
+void restart_epolloneshot(int fd) {
+
+    struct epoll_event ev;
+    ev.events  = EPOLLIN | EPOLLONESHOT;
+    ev.data.fd = fd;
+
+    if (epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &ev) < 0 && errno != ENOENT) {
+        log_error("epoll_ctl MOD restart_epolloneshot");
+    }
+}
+

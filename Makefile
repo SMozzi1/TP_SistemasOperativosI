@@ -1,51 +1,61 @@
-# ─── CONFIGURACIÓN DEL COMPILADOR C ───────────────────────────────
+# ─── C COMPILER CONFIGURATION ─────────────────────────────────────
 CC = gcc
 CFLAGS = -Wall -Wextra -g -pthread -D_GNU_SOURCE -I. -IResourceManager
 LDFLAGS = -pthread
 
-# Nombre del ejecutable final de C
-TARGET = servidor
+# ─── OUTPUT LAYOUT ────────────────────────────────────────────────
+# The final executable lives in build/, and every source path/foo.c is
+# compiled into its own subfolder: build/foo/foo.o
+BUILD_DIR = build
+TARGET    = $(BUILD_DIR)/servidor
 
-# ─── ARCHIVOS FUENTE C (.c) ───────────────────────────────────────
+# ─── C SOURCES ────────────────────────────────────────────────────
 SRCS = main.c \
-       agenteC/agente.c \
-       agenteC/comunicaciones.c \
-       agenteC/utils.c \
-       agenteC/loopfunc.c \
-       agenteC/read_instructions.c \
-       agenteC/timer.c \
+       agent/agent.c \
+       agent/communications.c \
+       agent/utils.c \
+       agent/loopfunc.c \
+       agent/read_instructions.c \
+       agent/timer.c \
        ResourceManager/hash.c \
-       ResourceManager/tablahash.c \
+       ResourceManager/hashtable.c \
        ResourceManager/resource_queue.c
 
-# Convierte automáticamente la lista de .c en archivos objeto .o
-OBJS = $(SRCS:.c=.o)
+# path/foo.c -> build/foo/foo.o
+OBJS = $(foreach s,$(SRCS),$(BUILD_DIR)/$(basename $(notdir $(s)))/$(notdir $(s:.c=.o)))
 
-# ─── CONFIGURACIÓN ERLANG ─────────────────────────────────────────
+# ─── ERLANG CONFIGURATION ─────────────────────────────────────────
 ERLC = erlc
 ERL_SRCS = Scheduler_Erlang/scheduler.erl Scheduler_Erlang/scheduler_utils.erl
 BEAM_FILES = $(ERL_SRCS:.erl=.beam)
 
-# ─── REGLAS DE COMPILACIÓN ────────────────────────────────────────
+# ─── BUILD RULES ──────────────────────────────────────────────────
 
-# Regla principal (se ejecuta al escribir 'make'). Ahora compila C y Erlang.
+# Default rule: build the C executable and the Erlang beams.
 all: $(TARGET) $(BEAM_FILES)
 
-# Enlaza los archivos objeto para crear el ejecutable C
+# Link every object into build/servidor.
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(LDFLAGS)
+	@mkdir -p $(BUILD_DIR)
+	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
 
-# Regla para compilar cada archivo C a un .o
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+# Generate one compile rule per source: build/<name>/<name>.o : <src>.
+# (The object path does not encode the source directory, so a single pattern
+#  rule cannot map it back — we emit an explicit rule per source instead.)
+define OBJ_RULE
+$(BUILD_DIR)/$(basename $(notdir $(1)))/$(notdir $(1:.c=.o)): $(1)
+	@mkdir -p $$(dir $$@)
+	$$(CC) $$(CFLAGS) -c $$< -o $$@
+endef
+$(foreach s,$(SRCS),$(eval $(call OBJ_RULE,$(s))))
 
-# Regla para compilar los archivos Erlang (.erl) a (.beam)
+# Erlang .erl -> .beam
 %.beam: %.erl
 	$(ERLC) $<
 
-
-# Limpieza de archivos temporales, el ejecutable y los archivos compilados de Erlang
+# Remove the whole build/ tree plus the Erlang beams.
 clean:
-	rm -f $(OBJS) $(TARGET) $(BEAM_FILES) erl_crash.dump
+	rm -rf $(BUILD_DIR)
+	rm -f $(BEAM_FILES) erl_crash.dump
 
 .PHONY: all clean

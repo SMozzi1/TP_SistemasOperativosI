@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 #include <time.h>
-#include "tablahash.h"
+#include "hashtable.h"
 #define HASH_SIZE 256
 
 

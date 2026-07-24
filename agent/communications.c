@@ -1,5 +1,4 @@
-#include "comunicaciones.h"
-#include "utils.h"
+#include "communications.h"
 #include "read_instructions.h"
 
 
@@ -111,7 +110,7 @@ void client_to_myserver(int current_fd, char *instruction) {
     }
     /* ── RELEASE: the remote node frees resources we granted it ──────── */
     else if (!strcmp(tokens[0], "RELEASE")) {
-        if (num >= 2) printf("[SERVER] RELEASE job %s en fd=%d\n", tokens[1], current_fd);
+        if (num >= 2) printf("[SERVER] RELEASE job %s on fd=%d\n", tokens[1], current_fd);
         release_client_by_fd(current_fd);
     }
     /* ── GRANTED: response to a RESERVE we sent ─────────────────────── */
@@ -136,7 +135,7 @@ void client_to_myserver(int current_fd, char *instruction) {
             /* The job just made progress: restart its timeout clock so it counts
              * time waiting for the NEXT resource, not the whole lifetime (B2). */
             job->timer = get_monotonic_time();
-            printf("[SERVER] Job %d: recurso otorgado por fd=%d\n", job->job_id, current_fd);
+            printf("[SERVER] Job %d: resource granted by fd=%d\n", job->job_id, current_fd);
 
             /* This fd is now a held provider connection kept ONLY to send RELEASE
              * later. Drop it from the fd index AND stop monitoring it in epoll, so
@@ -150,7 +149,7 @@ void client_to_myserver(int current_fd, char *instruction) {
     /* ── Unknown / DENIED: reject the job ───────────────────────────── */
     else {
         if (num < 2) {
-            fprintf(stderr, "[WARN] Mensaje desconocido o malformado: %s\n", instruction);
+            fprintf(stderr, "[WARN] Unknown or malformed message: %s\n", instruction);
             return;
         }
         fd_job_entry key;
@@ -226,7 +225,7 @@ void erlang_to_C(char *instruction, time_t timer) {
             char *dest_amt = strtok(NULL, " ");
 
             if (!dest_ip || !dest_res || !dest_amt) {
-                fprintf(stderr, "[WARN] Formato inválido: %s\n", tokens[i]);
+                fprintf(stderr, "[WARN] Invalid format: %s\n", tokens[i]);
                 continue;
             }
 

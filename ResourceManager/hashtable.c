@@ -1,4 +1,4 @@
-#include "tablahash.h"
+#include "hashtable.h"
 #include <assert.h>
 
 /**

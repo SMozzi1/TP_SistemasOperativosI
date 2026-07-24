@@ -1,5 +1,5 @@
-#ifndef __TABLAHASH_H__
-#define __TABLAHASH_H__
+#ifndef __HASHTABLE_H__
+#define __HASHTABLE_H__
 
 #include <stdlib.h>
 #include <pthread.h>
@@ -82,4 +82,4 @@ void tablahash_remove(HashTable table, void *data);
 
 void tablahash_remove_lock(HashTable table, void *data);
 
-#endif /* __TABLAHASH_H__ */
+#endif /* __HASHTABLE_H__ */

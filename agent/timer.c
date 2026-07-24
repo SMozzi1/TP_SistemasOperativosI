@@ -1,8 +1,6 @@
 
 #include "timer.h"
-#include "globals.h"
-#include "comunicaciones.h"
-#include "utils.h"
+#include "communications.h"
 
 #include <stdio.h>
 #include <unistd.h>
@@ -76,7 +74,7 @@ void check_nodes_timeouts(HashTable table) {
         while (*pp != NULL) {
             received_node* node = (received_node*)(*pp)->data;
             if (difftime(now, node->time) >= NODE_TIMEOUT_SEC) {
-                printf("[TIMEOUT] Nodo ip=%d eliminado por inactividad\n", node->ip);
+                printf("[TIMEOUT] Node ip=%d removed due to inactivity\n", node->ip);
                 ListNode* to_remove = *pp;
                 *pp = to_remove->next;
                 table->destr(to_remove->data);
@@ -132,7 +130,7 @@ void check_ourjob_timeouts(HashTable table) {
 
         char id_str[16];
         snprintf(id_str, sizeof(id_str), "%d", job->job_id);
-        printf("[TIMEOUT] Job %d expiró esperando recursos\n", job->job_id);
+        printf("[TIMEOUT] Job %d timed out waiting for resources\n", job->job_id);
 
         /* Tear down the in-flight outbound socket, if any. */
         if (job->origin_socket >= 0) {

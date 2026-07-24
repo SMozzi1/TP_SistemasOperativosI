@@ -1,5 +1,4 @@
-#include "../agenteC/globals.h"
-#include "../agenteC/agente.h"
+#include "agent/agent.h"
 
 /* Local capacity of this node. The enunciado's example inventory is
  * cpu:4, mem:8192 MB, gpu:1. Change these to model a different machine. */
@@ -24,7 +23,7 @@ HashTable table_nodes;
 int main(int argc, char** argv) {
     int port ;
     if (argc < 2) {
-        printf("[INFO] No se pasó puerto por argumento. Usando el default: 4200\n");
+        printf("[INFO] No port given as argument. Using the default: 4200\n");
         port = 4200;
     } else {
     port = atoi(argv[1]);
