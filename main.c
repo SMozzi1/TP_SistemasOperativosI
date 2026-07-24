@@ -14,10 +14,10 @@ request_queue* cpu_queue;
 request_queue* mem_queue;
 request_queue* gpu_queue;
 
-TablaHash table_localjobs;
-TablaHash table_ourjobs;
-TablaHash table_nodejobs;
-TablaHash table_nodes;
+HashTable table_localjobs;
+HashTable table_ourjobs;
+HashTable table_nodejobs;
+HashTable table_nodes;
 
 
 

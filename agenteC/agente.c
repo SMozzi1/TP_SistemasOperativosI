@@ -47,7 +47,7 @@ int socket_UDP;
 
 
 /**
- * No necesita cambios ya que no usa estructuras de datos ni funciones de la tabla hash.
+ * No changes needed since it uses no data structures or hash table functions.
  */
 
 //Socket initialization

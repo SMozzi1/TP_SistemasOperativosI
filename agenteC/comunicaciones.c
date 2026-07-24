@@ -83,12 +83,12 @@ void C_to_erlang(const char *instruction, const char *job_id) {
 
 
 /*
- * Handles a message that arrived from a remote node on 'actual_fd':
+ * Handles a message that arrived from a remote node on 'current_fd':
  *  - RESERVE / RELEASE : the peer requests or frees one of OUR local resources.
  *  - GRANTED           : the peer answered a RESERVE WE sent.
  *  - anything else / DENIED : treated as a rejection of our job.
  */
-void client_to_myserver(int actual_fd, char *instruction) {
+void client_to_myserver(int current_fd, char *instruction) {
     /* Work on a copy to avoid destroying the original buffer */
     char copy[BUFFER_LEN];
     strncpy(copy, instruction, sizeof(copy) - 1);
@@ -107,12 +107,12 @@ void client_to_myserver(int actual_fd, char *instruction) {
         int job_id = atoi(tokens[1]);
 
         /* enqueue and try to grant immediately (drain_queue decides) */
-        enqueue_jobs(tokens[2], job_id, amount, actual_fd);
+        enqueue_jobs(tokens[2], job_id, amount, current_fd);
     }
     /* ── RELEASE: the remote node frees resources we granted it ──────── */
     else if (!strcmp(tokens[0], "RELEASE")) {
-        if (num >= 2) printf("[SERVER] RELEASE job %s en fd=%d\n", tokens[1], actual_fd);
-        release_client_by_fd(actual_fd);
+        if (num >= 2) printf("[SERVER] RELEASE job %s en fd=%d\n", tokens[1], current_fd);
+        release_client_by_fd(current_fd);
     }
     /* ── GRANTED: response to a RESERVE we sent ─────────────────────── */
     else if (!strcmp(tokens[0], "GRANTED")) {
@@ -120,7 +120,7 @@ void client_to_myserver(int actual_fd, char *instruction) {
         int received_job_id = atoi(tokens[1]);
 
         fd_job_entry key;
-        key.fd = actual_fd;
+        key.fd = current_fd;
         fd_job_entry* found = (fd_job_entry*) tablahash_find(table_ourjobs, &key);
 
         if (found != NULL && found->job != NULL && found->job->job_id == received_job_id) {
@@ -129,21 +129,21 @@ void client_to_myserver(int actual_fd, char *instruction) {
             pending_resource_t* req = job->next_req;
             if (req != NULL) {
                 job->next_req = req->next;
-                req->provider_fd = actual_fd;      // keep this connection open for RELEASE
+                req->provider_fd = current_fd;      // keep this connection open for RELEASE
                 req->next = job->granted_reqs;
                 job->granted_reqs = req;
             }
             /* The job just made progress: restart its timeout clock so it counts
              * time waiting for the NEXT resource, not the whole lifetime (B2). */
             job->timer = get_monotonic_time();
-            printf("[SERVER] Job %d: recurso otorgado por fd=%d\n", job->job_id, actual_fd);
+            printf("[SERVER] Job %d: recurso otorgado por fd=%d\n", job->job_id, current_fd);
 
             /* This fd is now a held provider connection kept ONLY to send RELEASE
              * later. Drop it from the fd index AND stop monitoring it in epoll, so
              * its lifetime is owned solely by release_resources(): no disconnect-path
              * close, no fd-number reuse, no cross-talk (B1). It stays open. */
             tablahash_remove_lock(table_ourjobs, &key);
-            epoll_ctl(epollfd, EPOLL_CTL_DEL, actual_fd, NULL);
+            epoll_ctl(epollfd, EPOLL_CTL_DEL, current_fd, NULL);
             ask_for_next_resource(job);
         }
     }
@@ -154,7 +154,7 @@ void client_to_myserver(int actual_fd, char *instruction) {
             return;
         }
         fd_job_entry key;
-        key.fd = actual_fd;
+        key.fd = current_fd;
         fd_job_entry* found = (fd_job_entry*) tablahash_find(table_ourjobs, &key);
         if (found != NULL && found->job != NULL) {
             local_job_t* job = found->job;

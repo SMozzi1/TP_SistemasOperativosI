@@ -23,7 +23,7 @@ void ask_for_next_resource(local_job_t* job);
     Identifies whether the message is a request (RESERVE/RELEASE) or a response 
     (GRANTED/DENIED) and invokes the corresponding business logic.
 */
-void client_to_myserver(int fd_actual, char *instruction);
+void client_to_myserver(int current_fd, char *instruction);
 
 /*
     Sends a formatted response back to the Erlang scheduler safely using MSG_NOSIGNAL.

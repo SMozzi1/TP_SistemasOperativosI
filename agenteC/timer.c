@@ -65,21 +65,21 @@ time_t get_monotonic_time(void) {
  * NODE_TIMEOUT_SEC (enunciado 5.3). Safe single-pass deletion using a
  * pointer-to-pointer walk so we never advance through a freed node.
  */
-void check_nodes_timeouts(TablaHash table) {
+void check_nodes_timeouts(HashTable table) {
     if (table == NULL) return;
 
     time_t now = get_monotonic_time();
 
     pthread_mutex_lock(&table->table_mutex);
-    for (unsigned i = 0; i < table->capacidad; i++) {
-        NodoLista** pp = &table->elems[i].lista;
+    for (unsigned i = 0; i < table->capacity; i++) {
+        ListNode** pp = &table->elems[i].list;
         while (*pp != NULL) {
-            received_node* nodo = (received_node*)(*pp)->dato;
-            if (difftime(now, nodo->time) >= NODE_TIMEOUT_SEC) {
-                printf("[TIMEOUT] Nodo ip=%d eliminado por inactividad\n", nodo->ip);
-                NodoLista* to_remove = *pp;
+            received_node* node = (received_node*)(*pp)->data;
+            if (difftime(now, node->time) >= NODE_TIMEOUT_SEC) {
+                printf("[TIMEOUT] Nodo ip=%d eliminado por inactividad\n", node->ip);
+                ListNode* to_remove = *pp;
                 *pp = to_remove->next;
-                table->destr(to_remove->dato);
+                table->destr(to_remove->data);
                 free(to_remove);
                 table->numElems--;
             } else {
@@ -101,7 +101,7 @@ void check_nodes_timeouts(TablaHash table) {
  * tablahash_remove_lock) takes locks that would otherwise deadlock or violate
  * the lock order.
  */
-void check_ourjob_timeouts(TablaHash table) {
+void check_ourjob_timeouts(HashTable table) {
     if (table == NULL) return;
 
     time_t now = get_monotonic_time();
@@ -110,16 +110,16 @@ void check_ourjob_timeouts(TablaHash table) {
     int count = 0;
 
     pthread_mutex_lock(&table->table_mutex);
-    for (unsigned i = 0; i < table->capacidad && count < MAX_TIMEOUTS_PER_TICK; i++) {
-        NodoLista* actual = table->elems[i].lista;
-        while (actual != NULL && count < MAX_TIMEOUTS_PER_TICK) {
-            local_job_t* job = (local_job_t*)actual->dato;
+    for (unsigned i = 0; i < table->capacity && count < MAX_TIMEOUTS_PER_TICK; i++) {
+        ListNode* current = table->elems[i].list;
+        while (current != NULL && count < MAX_TIMEOUTS_PER_TICK) {
+            local_job_t* job = (local_job_t*)current->data;
             // Only jobs still waiting for a resource are deadlock candidates;
             // a fully granted job (next_req == NULL) is done, not stuck.
             if (job->next_req != NULL && difftime(now, job->timer) >= JOB_TIMEOUT_SEC) {
                 expired[count++] = job->job_id;
             }
-            actual = actual->next;
+            current = current->next;
         }
     }
     pthread_mutex_unlock(&table->table_mutex);

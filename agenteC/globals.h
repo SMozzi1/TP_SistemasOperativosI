@@ -17,10 +17,10 @@
  *  - table_nodejobs  : jobs from other agents we granted resources to.
  *  - table_nodes     : discovered peer directory (from UDP ANNOUNCE).
  */
-extern TablaHash table_localjobs;
-extern TablaHash table_ourjobs;
-extern TablaHash table_nodejobs;
-extern TablaHash table_nodes;
+extern HashTable table_localjobs;
+extern HashTable table_ourjobs;
+extern HashTable table_nodejobs;
+extern HashTable table_nodes;
 
 /* Each queue carries this node's free amount of its resource (resources_left)
  * plus the FIFO of peers waiting for it, both guarded by its own mutexQueue. */

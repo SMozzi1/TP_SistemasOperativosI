@@ -30,12 +30,12 @@ time_t get_monotonic_time(void);
 
 
 /* Evicts peers from the nodes table that have not announced within NODE_TIMEOUT_SEC. */
-void check_nodes_timeouts(TablaHash table_nodes);
+void check_nodes_timeouts(HashTable table_nodes);
 
 /* No-Preemption deadlock recovery: times out local jobs still waiting for a
  * resource after JOB_TIMEOUT_SEC, releases their partial reservations, tells
  * Erlang JOB_TIMEOUT and drops them. 'table' must be the owner (table_localjobs). */
-void check_ourjob_timeouts(TablaHash table);
+void check_ourjob_timeouts(HashTable table);
 
 
 #endif /*_TIMER_H_*/

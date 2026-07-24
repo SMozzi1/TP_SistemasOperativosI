@@ -6,80 +6,80 @@
 
 #define HASH_SIZE 256
 
-/* 1) Typedefs de punteros a función, definidos ANTES de usarlos en el struct */
-typedef void *(*FuncionCopiadora)(void *dato);
-/** Retorna una copia fisica del dato */
-typedef int (*FuncionComparadora)(void *dato1, void *dato2);
-/** Retorna un entero negativo si dato1 < dato2, 0 si son iguales y un entero
- * positivo si dato1 > dato2  */
-typedef void (*FuncionDestructora)(void *dato);
-/** Libera la memoria alocada para el dato */
-typedef unsigned (*FuncionHash)(void *dato);
-/** Retorna un entero sin signo para el dato */
+/* 1) Function-pointer typedefs, defined BEFORE they are used in the struct */
+typedef void *(*CopyFunc)(void *data);
+/** Returns a physical copy of the data */
+typedef int (*CompareFunc)(void *data1, void *data2);
+/** Returns a negative int if data1 < data2, 0 if equal and a positive int if
+ * data1 > data2 */
+typedef void (*DestroyFunc)(void *data);
+/** Frees the memory allocated for the data */
+typedef unsigned (*HashFunc)(void *data);
+/** Returns an unsigned int for the data */
 
-/* 2) Casillas de la tabla hash (encadenamiento para colisiones) */
-typedef struct _NodoLista {
-    void *dato;
-    struct _NodoLista *next;
-} NodoLista;
+/* 2) Hash table buckets (chaining for collisions) */
+typedef struct _ListNode {
+    void *data;
+    struct _ListNode *next;
+} ListNode;
 
 typedef struct {
-  NodoLista* lista;
-} CasillaHash;
+  ListNode* list;
+} HashBucket;
 
-/* 3) El struct principal, ahora expuesto acá en el .h */
-struct _TablaHash {
-  CasillaHash *elems;
+/* 3) The main struct, now exposed here in the .h */
+struct _HashTable {
+  HashBucket *elems;
   unsigned numElems;
-  unsigned capacidad;
-  FuncionCopiadora copia;
-  FuncionComparadora comp;
-  FuncionDestructora destr;
-  FuncionHash hash;
+  unsigned capacity;
+  CopyFunc copy;
+  CompareFunc comp;
+  DestroyFunc destr;
+  HashFunc hash;
   pthread_mutex_t table_mutex;
 };
 
-/* 4) TablaHash sigue siendo un puntero al struct (coincide con el uso "->" en el .c) */
-typedef struct _TablaHash *TablaHash;
+/* 4) HashTable is still a pointer to the struct (matches the "->" use in the .c) */
+typedef struct _HashTable *HashTable;
 
 /**
- * Crea una nueva tabla hash vacia, con la capacidad dada.
+ * Creates a new empty hash table, with the given capacity.
  */
-TablaHash tablahash_create(FuncionCopiadora copia,
-                          FuncionComparadora comp, FuncionDestructora destr,
-                          FuncionHash hash);
+HashTable tablahash_create(CopyFunc copy,
+                          CompareFunc comp, DestroyFunc destr,
+                          HashFunc hash);
 
 /**
- * Retorna el numero de elementos de la tabla.
+ * Returns the number of elements in the table.
  */
-int tablahash_nelems(TablaHash tabla);
+int tablahash_nelems(HashTable table);
 
 /**
- * Retorna la capacidad de la tabla.
+ * Returns the capacity of the table.
  */
-int tablahash_capacity(TablaHash tabla);
+int tablahash_capacity(HashTable table);
 
 /**
- * Destruye la tabla.
+ * Destroys the table.
  */
-void tablahash_destroy(TablaHash tabla);
+void tablahash_destroy(HashTable table);
 
 /**
- * Inserta un dato en la tabla, o lo reemplaza si ya se encontraba.
+ * Inserts a datum into the table, or replaces it if already present.
  */
-void tablahash_insert(TablaHash tabla, void *dato);
+void tablahash_insert(HashTable table, void *data);
 
 /**
- * Retorna el dato de la tabla que coincida con el dato dado, o NULL si el dato
- * buscado no se encuentra en la tabla.
+ * Returns the table datum matching the given one, or NULL if the searched
+ * datum is not found in the table.
  */
-void *tablahash_find(TablaHash tabla, void *dato);
+void *tablahash_find(HashTable table, void *data);
 
 /**
- * Elimina el dato de la tabla que coincida con el dato dado.
+ * Removes the table datum matching the given one.
  */
-void tablahash_remove(TablaHash tabla, void *dato);
+void tablahash_remove(HashTable table, void *data);
 
-void tablahash_remove_lock(TablaHash tabla, void *dato);
+void tablahash_remove_lock(HashTable table, void *data);
 
 #endif /* __TABLAHASH_H__ */

@@ -63,8 +63,8 @@ int comp_job(void* data1, void* data2);
 void* copy_job(void* data);
 void dest_job(void* data);
 
-TablaHash create_table_nodes();
-TablaHash create_table_jobs();
+HashTable create_table_nodes();
+HashTable create_table_jobs();
 
 /* --- Client --- */ 
 
@@ -91,7 +91,7 @@ unsigned func_hash_fd(void *data);
 int comp_fd(void *data1, void *data2);
 void *copy_fd(void *data);
 void destr_fd(void *data);
-TablaHash create_table_fd_jobs();
+HashTable create_table_fd_jobs();
 
 /*
  * Owner table for the local jobs we run on Erlang's behalf. Keyed by job_id.
@@ -104,6 +104,6 @@ unsigned func_hash_localjob(void *data);
 int comp_localjob(void *data1, void *data2);
 void *copy_localjob(void *data);
 void destr_localjob(void *data);
-TablaHash create_table_local_jobs();
+HashTable create_table_local_jobs();
 
 #endif // _HASH_

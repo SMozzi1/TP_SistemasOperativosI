@@ -2,7 +2,7 @@
 #include <assert.h>
 
 
-// specific funcionts for Server nodes
+// specific functions for Server nodes
 unsigned func_hash_node(void* data){
     received_node* node = (received_node*) data;
     return (unsigned)(node->ip); // we hash using the ip of the node, since it is unique for each node
@@ -48,13 +48,13 @@ void dest_job(void* data){
     free (data);
 }
 
-TablaHash create_table_nodes(){
+HashTable create_table_nodes(){
     return tablahash_create(copy_node, comp_node, destr_node, func_hash_node);
 }
 
 
 //
-TablaHash create_table_jobs(){
+HashTable create_table_jobs(){
     return tablahash_create(copy_job, comp_job, dest_job, func_hash_job);
 }
 
@@ -74,14 +74,14 @@ int comp_fd(void *data1, void *data2) {
 
 void *copy_fd(void *data) {
     fd_job_entry *orig = (fd_job_entry *)data;
-    fd_job_entry *copia = malloc(sizeof(fd_job_entry));
-    *copia = *orig;
-    return copia;
+    fd_job_entry *copy = malloc(sizeof(fd_job_entry));
+    *copy = *orig;
+    return copy;
 }
 
 void destr_fd(void *data) { free(data); }
 
-TablaHash create_table_fd_jobs() {
+HashTable create_table_fd_jobs() {
     return tablahash_create(copy_fd, comp_fd, destr_fd, func_hash_fd);
 }
 
@@ -123,6 +123,6 @@ void destr_localjob(void *data) {
     free(job);
 }
 
-TablaHash create_table_local_jobs() {
+HashTable create_table_local_jobs() {
     return tablahash_create(copy_localjob, comp_localjob, destr_localjob, func_hash_localjob);
 }

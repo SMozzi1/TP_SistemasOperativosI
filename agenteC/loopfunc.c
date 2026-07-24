@@ -83,7 +83,7 @@ void udp_broadcast(int socket_UDP, int port) {
     memset(&bcast_addr, 0, sizeof(bcast_addr));
     bcast_addr.sin_family      = AF_INET;
     bcast_addr.sin_port        = htons(12529); //harcoded but the port will be always the same for the broadcast
-    // comento esta linea ya que para testear en docker fijo una ip de la red virtual pero es la linea correspondiente
+    // this is the correct line; for docker testing an IP of the virtual network is hardcoded instead
     bcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
     //bcast_addr.sin_addr.s_addr = inet_addr("10.5.255.255");
 
@@ -117,20 +117,20 @@ void udp_datagram_from_remote(int fd){
     int ip_int = (int)sender.sin_addr.s_addr;
     int port = atoi(tokens[1]);
 
-    received_node nodo;
-    nodo.ip = ip_int;
-    nodo.port = port;
-    nodo.cpu = get_quantity(tokens[2]);
-    nodo.mem = get_quantity(tokens[3]);
-    nodo.gpu = get_quantity(tokens[4]);
+    received_node node;
+    node.ip = ip_int;
+    node.port = port;
+    node.cpu = get_quantity(tokens[2]);
+    node.mem = get_quantity(tokens[3]);
+    node.gpu = get_quantity(tokens[4]);
 
     
-    nodo.time = get_monotonic_time();
+    node.time = get_monotonic_time();
 
     //if it is new then it insert in hash_nodes, otherwise replace it 
-    tablahash_insert(table_nodes, (void*)&nodo);
+    tablahash_insert(table_nodes, (void*)&node);
     printf("[UDP E] Received ANNOUNCE from %s:%d - cpu:%d mem:%d gpu:%d\n",
-           inet_ntoa(sender.sin_addr), port, nodo.cpu, nodo.mem, nodo.gpu);
+           inet_ntoa(sender.sin_addr), port, node.cpu, node.mem, node.gpu);
 }
 
 //F

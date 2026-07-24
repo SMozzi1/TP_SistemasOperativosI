@@ -146,30 +146,30 @@ char* get_nodes_instance() {
     size_t buffer_size = 8192;
     char* result = malloc(buffer_size);
 
-    //Si no se pudo reservar memoria
+    // If memory allocation failed
     if (result == NULL) {
         pthread_mutex_unlock(&table_nodes->table_mutex);
         return NULL;
     }
 
     int offset = snprintf(result, buffer_size, "NODES ");
-    int first = 1;  // evitar poner ; al principio
+    int first = 1;  // avoid putting a ';' at the beginning
 
-    for (unsigned i = 0; i < table_nodes->capacidad; i++) {
-        NodoLista* actual = table_nodes->elems[i].lista;
+    for (unsigned i = 0; i < table_nodes->capacity; i++) {
+        ListNode* current = table_nodes->elems[i].list;
 
-        while (actual != NULL) {
-            received_node* nodo = (received_node*)actual->dato;
+        while (current != NULL) {
+            received_node* node = (received_node*)current->data;
 
-            // Separador ';' antes de cada nodo salvo el primero
+            // ';' separator before each node except the first
             if (!first && (size_t)offset < buffer_size) {
                 offset += snprintf(result + offset, buffer_size - offset, ";");
             }
             first = 0;
 
-            // Convertimos la IP de int a string legible para el protocolo
+            // Convert the int IP into a human-readable string for the protocol
             struct in_addr addr;
-            addr.s_addr = (uint32_t)nodo->ip;
+            addr.s_addr = (uint32_t)node->ip;
             char ip_str[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &addr, ip_str, sizeof(ip_str));
 
@@ -177,19 +177,19 @@ char* get_nodes_instance() {
                 offset += snprintf(result + offset, buffer_size - offset,
                                     "%s:%d:cpu:%d:mem:%d:gpu:%d",
                                     ip_str,
-                                    nodo->port,
-                                    nodo->cpu,
-                                    nodo->mem,
-                                    nodo->gpu);
+                                    node->port,
+                                    node->cpu,
+                                    node->mem,
+                                    node->gpu);
             }
 
-            actual = actual->next;
+            current = current->next;
         }
     }
 
     pthread_mutex_unlock(&table_nodes->table_mutex);
 
-    // Para que Erlang sepa dónde termina de escuchar
+    // So Erlang knows where the message ends
     if ((size_t)offset < buffer_size - 1) {
         snprintf(result + offset, buffer_size - offset, "\n");
     }

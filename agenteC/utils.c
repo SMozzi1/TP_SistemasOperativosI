@@ -48,8 +48,8 @@ void release_resources(local_job_t* job)
  * to satisfy pending requests. If there is enough available it is granted
  * immediately by drain_queue; otherwise it stays queued (enunciado 5.1).
  */
-void enqueue_jobs(const char* resource, int job_id, int amount, int fd_actual) {
-    request* rq = make_request(job_id, fd_actual, amount);
+void enqueue_jobs(const char* resource, int job_id, int amount, int current_fd) {
+    request* rq = make_request(job_id, current_fd, amount);
 
     if (!strcmp(resource, "cpu")) {
         enqueue_request(cpu_queue, rq);
@@ -65,8 +65,8 @@ void enqueue_jobs(const char* resource, int job_id, int amount, int fd_actual) {
 
 /*
  * Records a granted server-side reservation in table_nodejobs so it can be
- * reclaimed on RELEASE or on the peer's disconnect (enunciado 5.1: "tabla de
- * jobs activos con los recursos concedidos"). Keyed by (id, ip, port); the
+ * reclaimed on RELEASE or on the peer's disconnect (enunciado 5.1: an "active
+ * jobs table holding the granted resources"). Keyed by (id, ip, port); the
  * peer address is taken from the origin socket.
  */
 static void record_granted(int job_id, int origin_socket, const char* type, int amount) {
@@ -162,19 +162,19 @@ void release_client_by_fd(int fd) {
 
     /* Collect the amounts and drop the entries under the table lock only. */
     pthread_mutex_lock(&table_nodejobs->table_mutex);
-    for (unsigned i = 0; i < table_nodejobs->capacidad; i++) {
-        NodoLista** pp = &table_nodejobs->elems[i].lista;
+    for (unsigned i = 0; i < table_nodejobs->capacity; i++) {
+        ListNode** pp = &table_nodejobs->elems[i].list;
         while (*pp != NULL) {
-            received_job* job = (received_job*)(*pp)->dato;
+            received_job* job = (received_job*)(*pp)->data;
             if (job->original_socket == fd) {
                 found_any = 1;
                 add_cpu += job->cpu_granted;
                 add_mem += job->mem_granted;
                 add_gpu += job->gpu_granted;
 
-                NodoLista* to_remove = *pp;
+                ListNode* to_remove = *pp;
                 *pp = to_remove->next;
-                table_nodejobs->destr(to_remove->dato);
+                table_nodejobs->destr(to_remove->data);
                 free(to_remove);
                 table_nodejobs->numElems--;
             } else {
