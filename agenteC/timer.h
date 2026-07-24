@@ -5,7 +5,7 @@
 #include <sys/timerfd.h>
 #include <sys/epoll.h>
 #include <time.h>
-#include "../ResourceManager/job_table.h"
+#include "../ResourceManager/hash.h"
 
 
 
@@ -25,13 +25,17 @@ typedef struct times{
 int make_timer(int initial_sec, int interval_sec, int epollfd);
 
 
-
-void check_ourjob_timeouts(active_jobs* tabla, int timeout_sec);
-
-
+/* Monotonic seconds since an unspecified epoch (safe for measuring durations). */
+time_t get_monotonic_time(void);
 
 
+/* Evicts peers from the nodes table that have not announced within NODE_TIMEOUT_SEC. */
+void check_nodes_timeouts(TablaHash table_nodes);
 
+/* No-Preemption deadlock recovery: times out local jobs still waiting for a
+ * resource after JOB_TIMEOUT_SEC, releases their partial reservations, tells
+ * Erlang JOB_TIMEOUT and drops them. 'table' must be the owner (table_localjobs). */
+void check_ourjob_timeouts(TablaHash table);
 
 
 #endif /*_TIMER_H_*/

@@ -14,7 +14,7 @@
     Traverses the job's resource list and prepares the necessary networking 
     requests to peer nodes.
 */
-void ask_for_next_resource(job_entry* job);
+void ask_for_next_resource(local_job_t* job);
 
 
 

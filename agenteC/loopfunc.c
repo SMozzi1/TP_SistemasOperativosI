@@ -63,17 +63,17 @@ void connect_client(int fd, int epollfd){
 }
 
 //C
-//Each queue have the resources 
+// Announces this node's OWN free resources (the global counters, guarded by
+// mutex_resources). The queues only hold waiting peer requests, so they are
+// not read here.
 void udp_broadcast(int socket_UDP, int port) {
-    //We send a message whith our port and elements
     char msg[126];
-    pthread_mutex_lock(&cpu_queue->mutexQueue);
-    pthread_mutex_lock(&mem_queue->mutexQueue);
-    pthread_mutex_lock(&gpu_queue->mutexQueue);
 
-    int cpu = cpu_queue->resources_left;
-    int mem = mem_queue->resources_left;
-    int gpu = gpu_queue->resources_left;
+    pthread_mutex_lock(&mutex_resources);
+    int cpu = cpu_available;
+    int mem = mem_available;
+    int gpu = gpu_available;
+    pthread_mutex_unlock(&mutex_resources);
 
     /*
     Format: ANNOUNCE <port> <resources>
@@ -89,18 +89,13 @@ void udp_broadcast(int socket_UDP, int port) {
     // comento esta linea ya que para testear en docker fijo una ip de la red virtual pero es la linea correspondiente
     bcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
     //bcast_addr.sin_addr.s_addr = inet_addr("10.5.255.255");
-    
+
     ssize_t sent = sendto(socket_UDP, msg, strlen(msg), 0,(struct sockaddr *)&bcast_addr, sizeof(bcast_addr));
 
-    //Check this
-    if (sent < 0) 
+    if (sent < 0)
         log_error("[UDP BCAST] sendto failed");
-        else 
-        printf("[UDP BCAST] Announcement sent: %s\n", msg);
-        
-    pthread_mutex_unlock(&cpu_queue->mutexQueue);
-    pthread_mutex_unlock(&mem_queue->mutexQueue);
-    pthread_mutex_unlock(&gpu_queue->mutexQueue);
+    else
+        printf("[UDP BCAST] Announcement sent: %s", msg);
 }
 
 //E
@@ -120,7 +115,7 @@ void udp_datagram_from_remote(int fd){
     char *tokens[10];
     int num = get_token(copy, tokens, 10);
 
-    if (num < 2) return; // At least we need ANNOUNCE and the port
+    if (num < 5) return; // ANNOUNCE <port> cpu:.. mem:.. gpu:..
 
     int ip_int = (int)sender.sin_addr.s_addr;
     int port = atoi(tokens[1]);
@@ -148,8 +143,9 @@ void message_from_erlang(int fd, int epollfd){
 
     while ((result = read_until_newline(fd, line)) == 1) {
         printf("[ERLANG ->] %s", line);
-        erlang_to_C(line, time(NULL));
-    }   
+        // Monotonic timestamp so the job timeout sweep compares like-for-like.
+        erlang_to_C(line, get_monotonic_time());
+    }
     
     if (result == -1) {
         log_error("[EVENT F] Erlang disconnected");
@@ -170,19 +166,23 @@ void message_from_erlang(int fd, int epollfd){
 
 //G
 void send_request(int fd, int epollfd){
-    // We find out which Job and which Resource own this FD
-    job_entry* job = BuscarJobPorFD(fd); 
-            
-    if (job != NULL && job->next_req != NULL) {
+    // Find the local job that owns this outbound FD via the fd index.
+    fd_job_entry key;
+    key.fd = fd;
+    fd_job_entry* found = (fd_job_entry*) tablahash_buscar(table_ourjobs, &key);
+
+    if (found != NULL && found->job != NULL && found->job->next_req != NULL) {
+        local_job_t* job = found->job;
         char msg[256];
-        snprintf(msg, sizeof(msg), "RESERVE %d %s %d\n", job->job_id, job->next_req->type, job->next_req->amount);
-                                        
+        snprintf(msg, sizeof(msg), "RESERVE %d %s %d\n",
+                 job->job_id, job->next_req->type, job->next_req->amount);
+
         send(fd, msg, strlen(msg), MSG_NOSIGNAL);
-                        
-        /* 
+
+        /*
             Rearm the epoll registration to switch from EPOLLOUT (writing) to EPOLLIN (reading).
-            This ensures we stop monitoring for write-ready states and begin waiting for 
-            the peer's response to our request. We use EPOLLET (Edge-Triggered) and 
+            This ensures we stop monitoring for write-ready states and begin waiting for
+            the peer's response to our request. We use EPOLLET (Edge-Triggered) and
             EPOLLONESHOT for high-performance, single-thread-per-event delivery.
         */
         struct epoll_event ev;
@@ -190,7 +190,6 @@ void send_request(int fd, int epollfd){
         ev.data.fd = fd;
         epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &ev);
     }
-    ReleaseJob(job);
 }
 
 //H
@@ -227,7 +226,9 @@ void recive_message_from_remote(int fd, int epollfd){
         struct epoll_event ev_rearm;
         ev_rearm.events  = EPOLLIN | EPOLLONESHOT;
         ev_rearm.data.fd = fd;
-        if (epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &ev_rearm) < 0) {
+        /* ENOENT is expected when a GRANTED just turned this fd into a held
+         * provider connection and removed it from epoll (see B1); ignore it. */
+        if (epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &ev_rearm) < 0 && errno != ENOENT) {
             log_error("epoll_ctl MOD rearm");
         }
     }

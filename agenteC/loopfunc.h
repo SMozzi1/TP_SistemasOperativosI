@@ -37,7 +37,7 @@ void connect_client(int fd, int epollfd);
     Constructs a message with the node's port and available resources, then sends it to the broadcast address.
     Uses a mutex to safely access shared resource variables. 
 */
-void udp_broadcast(int socket_UDP, int port, int cpu, int mem, int gpu);
+void udp_broadcast(int socket_UDP, int port);
 
 /*
     Function for handling incoming UDP datagrams from remote nodes.

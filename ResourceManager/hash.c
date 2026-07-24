@@ -55,7 +55,7 @@ TablaHash create_table_nodes(){
 
 //
 TablaHash create_table_jobs(){
-    return tablahash_crear(copy_job, comp_job, destr_job, func_hash_job);
+    return tablahash_crear(copy_job, comp_job, dest_job, func_hash_job);
 }
 
 
@@ -83,4 +83,46 @@ void destr_fd(void *data) { free(data); }
 
 TablaHash create_table_fd_jobs() {
     return tablahash_crear(copy_fd, comp_fd, destr_fd, func_hash_fd);
+}
+
+
+// functions for the owner table of local jobs (keyed by job_id)
+
+unsigned func_hash_localjob(void *data) {
+    local_job_t *job = (local_job_t *)data;
+    return (unsigned)job->job_id;
+}
+
+int comp_localjob(void *data1, void *data2) {
+    local_job_t *a = (local_job_t *)data1;
+    local_job_t *b = (local_job_t *)data2;
+    return !(a->job_id == b->job_id);
+}
+
+// Pointer-owning "copy": the table stores the same heap pointer instead of
+// cloning, so the fd index and the owner share one allocation. Never free a
+// local_job_t elsewhere; free happens once here, via destr_localjob.
+void *copy_localjob(void *data) {
+    return data;
+}
+
+void destr_localjob(void *data) {
+    local_job_t *job = (local_job_t *)data;
+    pending_resource_t *r = job->next_req;
+    while (r != NULL) {
+        pending_resource_t *next = r->next;
+        free(r);
+        r = next;
+    }
+    r = job->granted_reqs;
+    while (r != NULL) {
+        pending_resource_t *next = r->next;
+        free(r);
+        r = next;
+    }
+    free(job);
+}
+
+TablaHash create_table_local_jobs() {
+    return tablahash_crear(copy_localjob, comp_localjob, destr_localjob, func_hash_localjob);
 }

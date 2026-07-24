@@ -14,6 +14,7 @@ typedef struct pending_resource {
     int amount;
     char dest_ip[16];
     int dest_port;
+    int provider_fd;              // socket of the node that granted this resource (-1 until granted)
     struct pending_resource *next; //a list that have Node1 cpu-> Node2 mem -> Node3 gpu
 } pending_resource_t;
 
@@ -91,5 +92,18 @@ int comp_fd(void *data1, void *data2);
 void *copy_fd(void *data);
 void destr_fd(void *data);
 TablaHash create_table_fd_jobs();
+
+/*
+ * Owner table for the local jobs we run on Erlang's behalf. Keyed by job_id.
+ * IMPORTANT: this table takes OWNERSHIP of the local_job_t pointer (the copy
+ * function returns the pointer as-is instead of cloning), so the single heap
+ * allocation is shared with the fd index (fd_job_entry.job). The destructor
+ * frees the struct AND both pending_resource_t lists exactly once, on removal.
+ */
+unsigned func_hash_localjob(void *data);
+int comp_localjob(void *data1, void *data2);
+void *copy_localjob(void *data);
+void destr_localjob(void *data);
+TablaHash create_table_local_jobs();
 
 #endif // _HASH_

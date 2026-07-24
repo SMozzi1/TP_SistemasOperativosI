@@ -178,7 +178,7 @@ static void* event_loop(void *arg) {
                    continue;
                 }
 
-                udp_broadcast(socket_UDP ,port, cpu_available, mem_available, gpu_available);
+                udp_broadcast(socket_UDP, port);
 
             }
 
@@ -193,8 +193,8 @@ static void* event_loop(void *arg) {
                     log_error("read timeout timer");
                     continue;
                 }
-                check_nodes_timeouts(&table_nodes);
-                check_ourjob_timeouts(&table_ourjobs);
+                check_nodes_timeouts(table_nodes);
+                check_ourjob_timeouts(table_localjobs);
             }
 
             /* ── E: incoming UDP datagram from another node ─────────── */

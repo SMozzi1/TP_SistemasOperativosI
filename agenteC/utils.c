@@ -3,120 +3,125 @@
 
 
 
-//Used for the freedom of the resources
-//and reused on the granted_t struct.
-void update_local_resources(job_entry* job) {
-
-    pthread_mutex_lock(&mutex_resources);
-    if (strcmp(job->resources->type, "cpu") == 0) {
-        cpu_available += job->resources->amount; 
-        //process_queue(&cpu_queue, cpu_available, "cpu");
-    } 
-    else if (strcmp(job->resources->type, "mem") == 0) {
-        mem_available += job->resources->amount;
-        //process_queue(&mem_queue, mem_available, "mem");
-    } 
-    else if (strcmp(job->resources->type, "gpu") == 0) {
-        gpu_available += job->resources->amount;
-        //process_queue(&gpu_queue, gpu_available, "gpu");
-    } 
-    
-    pthread_mutex_unlock(&mutex_resources);
-}
+void log_error(const char *msg)   { perror(msg); }
+void fatal_error(const char *msg) { perror(msg); exit(EXIT_FAILURE); }
 
 
-//
-// Caller MUST hold table_ourjobs.mutexTable when the job is still in the table.
-// If the job has been unlinked from the table first, locking is not needed.
-void release_resources(job_entry* job)
+
+/* ─────────────────────────── Client side ─────────────────────────── */
+
+/*
+ * Sends RELEASE to every provider that granted a resource to this local job
+ * and closes those provider connections. The job struct itself is owned by
+ * table_localjobs and is freed there when the job is removed.
+ * The caller is responsible for removing the job from the tables afterwards.
+ */
+void release_resources(local_job_t* job)
 {
-    // flag to see if there is a job or any resources at all
-    if (job == NULL || job->resources == NULL) {
-        return;
-    }
+    if (job == NULL) return;
 
-    granted_t* actual = job->resources;
+    pending_resource_t* granted = job->granted_reqs;
+    while (granted != NULL) {
+        if (granted->provider_fd >= 0) {
+            char msg[128];
+            snprintf(msg, sizeof(msg), "RELEASE %d %s %d\n",
+                     job->job_id, granted->type, granted->amount);
+            send(granted->provider_fd, msg, strlen(msg), MSG_NOSIGNAL);
 
-    // we see all the resource until there are no resources left
-    while (actual != NULL && actual != job->next_req) {
-        
-       
-        if (actual->provider_fd >= 0) {
-            char msg[256];
-            snprintf(msg, sizeof(msg), "RELEASE %d %s %d\n", job->job_id, actual->type, actual->amount);
-            
-            // we send the message to the node that provided this resource
-            send(actual->provider_fd, msg, strlen(msg), MSG_NOSIGNAL);
-            
-            printf("[INFO] Enviado RELEASE del recurso %s al FD %d para el Job %d\n", 
-                    actual->type, actual->provider_fd, job->job_id);
-            
-            // we close the connection with the resource
-            close(actual->provider_fd);
-        
-            // we set the fd as invalid.
-            actual->provider_fd = -1;
+            printf("[INFO] RELEASE del recurso %s enviado al fd=%d (job %d)\n",
+                   granted->type, granted->provider_fd, job->job_id);
+
+            epoll_ctl(epollfd, EPOLL_CTL_DEL, granted->provider_fd, NULL);
+            close(granted->provider_fd);
+            granted->provider_fd = -1;
         }
-        
-        // check the next resources
-        actual = actual->next;
+        granted = granted->next;
     }
 }
 
 
-//Asignation of where it came the memory, from which fd came the resource.
 
-void original_socket(job_entry* job, int fd)
-{
-    if (job == NULL || job->next_req == NULL) {
-        return;
-    }
+/* ─────────────────────────── Server side ─────────────────────────── */
 
-    // we asign the provider id to the resource
-    job->next_req->provider_fd = fd;
-
-    printf("[DEBUG] Asignado provider_fd = %d al recurso '%s' del Job %d\n", 
-            fd, job->next_req->type, job->job_id);
-}
-
-
-
-
-// If a resource order arrived, it queues it into the corresponding queue, 
-// later it calls reserve_elements to try to assign resourecs to the works on wait.
+/*
+ * A remote RESERVE arrived. Queue it into the matching resource FIFO and try
+ * to satisfy pending requests. If there is enough available it is granted
+ * immediately by drain_queue; otherwise it stays queued (enunciado 5.1).
+ */
 void enqueue_jobs(const char* resource, int job_id, int amount, int fd_actual) {
     request* rq = make_request(job_id, fd_actual, amount);
 
-    if(!strcmp(resource, "cpu")) {
-        enqueue_request(&cpu_queue, rq);
+    if (!strcmp(resource, "cpu")) {
+        enqueue_request(cpu_queue, rq);
     } else if (!strcmp(resource, "mem")) {
-        enqueue_request(&mem_queue, rq);
+        enqueue_request(mem_queue, rq);
     } else {
-        enqueue_request(&gpu_queue, rq);
+        enqueue_request(gpu_queue, rq);
     }
 
     reserve_elements();
 }
 
-/*   Drains a queue: gives as much resources from the head as *avail lets.
 
- * Concurrency:
-* - The check (*avail >= head->amount) and the two mutations (dequeue and
-* avail -=) occur with BOTH locks held simultaneously ⇒ the decision is 
-* atomic. This is what the previous version did wrong.
-* - Lock order: mutex_resources -> mutexQueue. Nothing in the code takes them
-* in reverse, so there's no deadlock.
-* - The slow work (insert into table + send) happens AFTER both
-* locks are released: we never hold mutex_resources while holding
-* table_clients.mutexTable (see the note below, this matters).
+/*
+ * Records a granted server-side reservation in table_nodejobs so it can be
+ * reclaimed on RELEASE or on the peer's disconnect (enunciado 5.1: "tabla de
+ * jobs activos con los recursos concedidos"). Keyed by (id, ip, port); the
+ * peer address is taken from the origin socket.
  */
-void drain_queue(p_queue_t* q, int* avail, const char* type) {
-    p_request_t* ready = NULL;   /* stash, encadenado por next_req */
+static void record_granted(int job_id, int origin_socket, const char* type, int amount) {
+    struct sockaddr_in peer;
+    socklen_t plen = sizeof(peer);
+    int ip = 0, port = 0;
+    if (getpeername(origin_socket, (struct sockaddr*)&peer, &plen) == 0) {
+        ip   = (int)peer.sin_addr.s_addr;
+        port = ntohs(peer.sin_port);
+    }
+
+    received_job key;
+    memset(&key, 0, sizeof(key));
+    key.id = job_id;
+    key.ip = ip;
+    key.port = port;
+
+    received_job rj;
+    received_job* existing = (received_job*) tablahash_buscar(table_nodejobs, &key);
+    if (existing != NULL) {
+        rj = *existing;
+    } else {
+        memset(&rj, 0, sizeof(rj));
+        rj.id = job_id;
+        rj.ip = ip;
+        rj.port = port;
+    }
+    rj.original_socket = origin_socket;
+
+    if (!strcmp(type, "cpu"))      rj.cpu_granted += amount;
+    else if (!strcmp(type, "mem")) rj.mem_granted += amount;
+    else                           rj.gpu_granted += amount;
+
+    tablahash_insertar(table_nodejobs, &rj); // deep-copies (received_job is a POD)
+}
+
+
+/*
+ * Drains one resource FIFO: grants as many head requests as *avail allows.
+ *
+ * Concurrency:
+ *  - The check (*avail >= head->amount) and the two mutations (dequeue and
+ *    avail -=) run with BOTH locks held, so the decision is atomic.
+ *  - Lock order is always mutex_resources -> mutexQueue; nothing takes them in
+ *    reverse, so there is no deadlock.
+ *  - The slow work (table insert + send) happens AFTER both locks are released;
+ *    we never hold mutex_resources while touching a table mutex.
+ */
+void drain_queue(request_queue* q, int* avail, const char* type) {
+    request* ready = NULL;   /* stash of granted requests, linked by next_req */
 
     pthread_mutex_lock(&mutex_resources);
     pthread_mutex_lock(&q->mutexQueue);
     while (q->first != NULL && *avail >= q->first->amount_requested) {
-        p_request_t* req = DequeueRequest_locked(q);
+        request* req = dequeue_request_locked(q);
         *avail -= req->amount_requested;
         req->next_req = ready;
         ready = req;
@@ -124,160 +129,46 @@ void drain_queue(p_queue_t* q, int* avail, const char* type) {
     pthread_mutex_unlock(&q->mutexQueue);
     pthread_mutex_unlock(&mutex_resources);
 
-    /* ---- outside the locks  ---- */
+    /* ---- outside the locks ---- */
     while (ready != NULL) {
-        p_request_t* req = ready;
+        request* req = ready;
         ready = ready->next_req;
 
-        granted_t* g = MakeGranted((char*)type, req->amount_requested, "local");
-
-        job_entry* je = FindJobBySocket(&table_clients, req->job_id, req->origin_socket);
-        if (je == NULL) {
-            je = MakeJob(req->job_id, req->origin_socket, time(NULL));
-            AddResource(je, g);
-            JobsTableInsert(&table_clients, je);
-            ReleaseJob(je);
-        } else {
-            AddResource(je, g);
-            ReleaseJob(je);
-        }
+        record_granted(req->job_id, req->origin_socket, type, req->amount_requested);
 
         char msg[64];
         int n = snprintf(msg, sizeof(msg), "GRANTED %d\n", req->job_id);
         send(req->origin_socket, msg, n, MSG_NOSIGNAL);
 
-        printf("[SERVER] Job %d: %s otorgada. Registrado en table_clients.\n",
+        printf("[SERVER] Job %d: %s otorgada (registrada en table_nodejobs)\n",
                req->job_id, type);
-        DestroyRequest(req);
+        destr_request(req);
     }
 }
 
-//Gives as many resources as available and it sends the granted message to the clients
+
 void reserve_elements(void) {
-    drain_queue(&cpu_queue, &cpu_available, "cpu");
-    drain_queue(&mem_queue, &mem_available, "mem");
-    drain_queue(&gpu_queue, &gpu_available, "gpu");
+    drain_queue(cpu_queue, &cpu_available, "cpu");
+    drain_queue(mem_queue, &mem_available, "mem");
+    drain_queue(gpu_queue, &gpu_available, "gpu");
 }
 
 
-char* obtener_string_nodos(job_entry* table[]) {
-    // Auxiliar temporal struct to group resources for a single Node.
-    typedef struct {
-        char ip[16];
-        int port;
-        int cpu;
-        int mem;
-        int gpu;
-    } NodeSummary;
-
-    // Temporal array to storage up to 128 unique remote nodes.
-    NodeSummary unique_nodes[128];
-    int node_count = 0;
-    memset(unique_nodes, 0, sizeof(unique_nodes));
-
-    // ─── 1. VISITS THE WHOLE HASH TABLE ───────────────────────────
-    for (int i = 0; i < TABLE_SIZE; i++) {
-        job_entry* current_job = table[i];
-
-        // Visits the collisions list for chaining (next_job)
-        while (current_job != NULL) {
-            granted_t* res = current_job->resources;
-
-            // Visits the linked lists of resources granted to that Job
-            while (res != NULL) {
-                int found_idx = -1;
-
-                // Searchs to know if the IP:PORT combination is already registered
-                for (int j = 0; j < node_count; j++) {
-                    if (unique_nodes[j].port == res->dest_port && 
-                        strcmp(unique_nodes[j].ip, res->dest_ip) == 0) {
-                        found_idx = j;
-                        break;
-                    }
-                }
-
-               // If it doesnt exist, we create a new entry for this remote node.
-                if (found_idx == -1) {
-                    if (node_count < 128) {
-                        strncpy(unique_nodes[node_count].ip, res->dest_ip, sizeof(unique_nodes[node_count].ip) - 1);
-                        unique_nodes[node_count].port = res->dest_port;
-                        found_idx = node_count;
-                        node_count++;
-                    } else {
-                        fprintf(stderr, "[WARN] Se superó el límite de nodos únicos en el buffer temporal.\n");
-                        break;
-                    }
-                }
-
-                // Add the quantity to the corresponding resource
-                if (strcmp(res->type, "cpu") == 0) {
-                    unique_nodes[found_idx].cpu += res->amount;
-                } else if (strcmp(res->type, "mem") == 0) {
-                    unique_nodes[found_idx].mem += res->amount;
-                } else if (strcmp(res->type, "gpu") == 0) {
-                    unique_nodes[found_idx].gpu += res->amount;
-                }
-
-                res = res->next; // Next resource of the job
-            }
-            current_job = current_job->next_job; // Next job on the bucket
-        }
-    }
-
-    // ─── 2. BUILD THE DYNAMIC STRING ──────────────────────────────
-    // We reserve a wide buffer on dynamic memory (8 KB) to make the answer.
-    size_t buffer_size = 8192;
-    char* result = malloc(buffer_size);
-    if (result == NULL) {
-        return NULL;
-    }
-
-    // Initialize the string with the required head
-    int offset = snprintf(result, buffer_size, "NODES ");
-
-    // Iterate the consolited nodes to concatened them on a safe way
-    for (int i = 0; i < node_count; i++) {
-        // Agrega el punto y coma separador a partir del segundo nodo impreso
-        if (i > 0 && (size_t)offset < buffer_size) {
-            offset += snprintf(result + offset, buffer_size - offset, ";");
-        }
-
-        // Concatenate the "IP:PORT:cpu:X:mem:Y:gpu:Z" format.
-        if ((size_t)offset < buffer_size) {
-            offset += snprintf(result + offset, buffer_size - offset, 
-                               "%s:%d:cpu:%d:mem:%d:gpu:%d",
-                               unique_nodes[i].ip, 
-                               unique_nodes[i].port, 
-                               unique_nodes[i].cpu, 
-                               unique_nodes[i].mem, 
-                               unique_nodes[i].gpu);
-        }
-    }
-
-    if ((size_t)offset < buffer_size - 1) { // to let the erlang process know when to stop listening
-        snprintf(result + offset, buffer_size - offset, "\n");
-    }
-
-    return result; 
-}
-
-void log_error(const char *msg)   { perror(msg); }
-void fatal_error(const char *msg) { perror(msg); exit(EXIT_FAILURE); }
-
-// Returns to the local pool the resource(s) reservated on the 'fd' conecction.
-// Removes the entry of table_clients and retry to serve the queues.
-// Idempotent: if in 'fd' theres nothing else reserved, it does nothing.
-
+/*
+ * Returns to the local pool every resource reserved on 'fd' (a peer's RELEASE
+ * or an unexpected disconnect), removes those entries from table_nodejobs, and
+ * re-drains the queues. Idempotent: if nothing is reserved on 'fd', it is a
+ * no-op.
+ */
 void release_client_by_fd(int fd) {
-    pthread_mutex_lock(&table_nodes->mutexTable);
-
     int found_any = 0;
 
-    for (int i = 0; i < HASH_SIZE; i++) {
-        received_job** pp = &table_nodes->elems[i].lista;
+    pthread_mutex_lock(&table_nodejobs->table_mutex);
+    for (unsigned i = 0; i < table_nodejobs->capacidad; i++) {
+        NodoLista** pp = &table_nodejobs->elems[i].lista;
         while (*pp != NULL) {
-            received_job* job = *pp;
-            if (job->origin_socket == fd) {
+            received_job* job = (received_job*)(*pp)->dato;
+            if (job->original_socket == fd) {
                 found_any = 1;
 
                 pthread_mutex_lock(&mutex_resources);
@@ -286,61 +177,49 @@ void release_client_by_fd(int fd) {
                 gpu_available += job->gpu_granted;
                 pthread_mutex_unlock(&mutex_resources);
 
-                job->cpu_granted = 0;
-                job->gpu_granted = 0;
-                job->mem_granted = 0;
-            
-                table_nodes->numElems--;
-                free(job);
+                NodoLista* victim = *pp;
+                *pp = victim->next;
+                table_nodejobs->destr(victim->dato);
+                free(victim);
+                table_nodejobs->numElems--;
             } else {
-                pp = &(*pp)->next_job;
+                pp = &(*pp)->next;
             }
         }
     }
-
-    pthread_mutex_unlock(&table_nodes->table_mutex);
+    pthread_mutex_unlock(&table_nodejobs->table_mutex);
 
     if (found_any) reserve_elements();
 }
 
 
-
-// If the connection that falied was ours (a own next_req waiting for
-// GRANTED/DENIED of a supplier that disconnected without an answer),
-// we deny the job immediately instead of waiting the 30 sec of the timeout.
+/*
+ * A provider disconnected before answering our RESERVE. Look the local job up
+ * by its current outbound fd (the fd index), reject it, release whatever other
+ * providers had already granted, and drop it from both tables.
+ */
 void handle_outbound_disconnect(int fd) {
-    pthread_mutex_lock(&table_ourjobs.mutexTable);
+    fd_job_entry key;
+    key.fd = fd;
+    fd_job_entry* entry = (fd_job_entry*) tablahash_buscar(table_ourjobs, &key);
+    if (entry == NULL || entry->job == NULL) return;
 
-    job_entry* job = NULL;
-    job_entry* prev = NULL;
-    int idx = -1;
-    for (int i = 0; i < TABLE_SIZE && job == NULL; i++) {
-        job_entry* cur = table_ourjobs.job_table[i];
-        job_entry* p = NULL;
-        while (cur != NULL) {
-            if (cur->origin_socket == fd) { job = cur; prev = p; idx = i; break; }
-            p = cur; cur = cur->next_job;
-        }
-    }
-
-    if (job == NULL) {
-        pthread_mutex_unlock(&table_ourjobs.mutexTable);
-        return;
-    }
+    local_job_t* job = entry->job;
+    int job_id = job->job_id;
 
     fprintf(stderr, "[WARN] Job %d: proveedor remoto se desconectó sin responder. Rechazado.\n",
-            job->job_id);
+            job_id);
 
-    if (prev == NULL) table_ourjobs.job_table[idx] = job->next_job;
-    else               prev->next_job = job->next_job;
-    table_ourjobs.active_count--;
+    /* drop the fd index entry (does not free the job) */
+    tablahash_eliminar_lock(table_ourjobs, &key);
 
-    pthread_mutex_unlock(&table_ourjobs.mutexTable);
+    /* release what other providers already granted */
+    release_resources(job);
 
     char id_str[16];
-    snprintf(id_str, sizeof(id_str), "%d", job->job_id);
-
-    release_resources(job);   // frees what would be given of OTHER suppliers
+    snprintf(id_str, sizeof(id_str), "%d", job_id);
     C_to_erlang("rejected", id_str);
-    ReleaseJob(job);
+
+    /* finally free the job via its owner table */
+    tablahash_eliminar_lock(table_localjobs, job);
 }

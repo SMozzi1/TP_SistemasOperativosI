@@ -60,6 +60,11 @@ void clear_connection_buffer(int fd);
  */
 int read_until_newline(int fd, char* output_line);
 
+/*
+    Parses a "name:quantity" fragment and returns the quantity as an int.
+*/
+int get_quantity(char* line);
+
 /**
  * to create the text of get nodes
  */

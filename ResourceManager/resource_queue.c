@@ -1,4 +1,6 @@
 #include "resource_queue.h"
+#include <assert.h>
+#include <string.h>
 
 
 
@@ -6,10 +8,11 @@ request* make_request(int jid, int socketfd, int amount){
 
     request *newRequest = malloc(sizeof(struct p_request_t));
     assert(newRequest != NULL);
-    newRequest -> job_id = jid;
-    newRequest -> origin_socket = socketfd;
-    newRequest -> amount_requested = amount;
-    newRequest -> next_req = NULL;
+    newRequest->job_id = jid;
+    newRequest->origin_socket = socketfd;
+    newRequest->amount_requested = amount;
+    newRequest->asked_resource[0] = '\0';
+    newRequest->next_req = NULL;
 
     return newRequest;
 }
@@ -20,12 +23,12 @@ void destr_request(request* req){
 }
 
 
-request_queue *make_queue(int resources){
+request_queue *make_queue(void){
 
     request_queue* newQueue = malloc(sizeof(struct p_queue_t));
-    newQueue -> resources_left = resources;
-    newQueue -> first = NULL;
-    newQueue -> last = NULL;
+    assert(newQueue != NULL);
+    newQueue->first = NULL;
+    newQueue->last = NULL;
     pthread_mutex_init(&newQueue->mutexQueue, NULL);
 
     return newQueue;
@@ -42,50 +45,26 @@ void enqueue_request(request_queue* queue, request* request){
         queue->last->next_req = request;
         queue->last = request;
     }
+    request->next_req = NULL;
 
     pthread_mutex_unlock(&queue->mutexQueue);
 }
 
 
-//para comparar se haria 
-//queue -> first -> cantidad que pide <= cant total que se tien
-//hacer dequeue_request
-//(basicamente si tengo los elementos para darle al request, entonces lo desencolo)
-request* dequeue_request(request_queue* queue) {
-    pthread_mutex_lock(&queue->mutexQueue);
-
-    if (queue->first == NULL) {
-        pthread_mutex_unlock(&queue->mutexQueue);
-        return NULL;
-    }
-
-    request* req = queue->first;
-    queue->first = req->next_req;
-
+/*
+ * Pops the head of the queue. The caller MUST already hold queue->mutexQueue
+ * (drain_queue holds both mutex_resources and mutexQueue while deciding, so it
+ * cannot use a self-locking dequeue).
+ */
+request* dequeue_request_locked(request_queue* queue) {
     if (queue->first == NULL)
-        queue->last = NULL;
-
-    pthread_mutex_unlock(&queue->mutexQueue);
-    return req;
-}
-
-
-//Function to get the request if we have the resources
-request* try_dequeue(request_queue* queue) {
-    pthread_mutex_lock(&queue->mutexQueue);
-
-    if (queue->first == NULL ||
-        queue->first->amount_requested > queue->resources_left) {
-        pthread_mutex_unlock(&queue->mutexQueue);
         return NULL;
-    }
 
     request* req = queue->first;
-    queue->resources_left -= req->amount_requested;
     queue->first = req->next_req;
     if (queue->first == NULL)
         queue->last = NULL;
 
-    pthread_mutex_unlock(&queue->mutexQueue);
+    req->next_req = NULL;
     return req;
 }

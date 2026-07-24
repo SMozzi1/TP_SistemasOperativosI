@@ -63,10 +63,6 @@ int read_until_newline(int fd, char *output_line) {
     char  *storage = connections[fd].buffer;
     int   *acc     = &connections[fd].accumulated_bytes;
 
-    if (*acc > 0) {
-        fprintf(stderr, "[DEBUGGEANDO] fd=%d ya tenía %d bytes acumulados al reusarse: %.80s\n", fd, *acc, storage);
-    }
-
     int space = BUFFER_LEN - *acc - 1;
     
     if (space <= 0) {
@@ -126,59 +122,19 @@ int read_until_newline(int fd, char *output_line) {
 
 
 
-//we get a line element:quantity
+//we get a line element:quantity  (e.g. "cpu:4" -> 4)
 int get_quantity(char* line){
-    
-    int i = 0;
+
     char *saveptr;
-    //strtok_r is thread safe 
-    char *t = strtok_r(line, ":", &saveptr);
+    //strtok_r is thread safe; the first token is the name, which we skip
+    strtok_r(line, ":", &saveptr);
     char *q = strtok_r(NULL, " ", &saveptr);
-    
-    i = atoi(q);
-    return i;
+
+    return (q != NULL) ? atoi(q) : 0;
 }
 
 
 
-
-char* get_udp_message(int fd){
-
-    char buf[BUFFER_LEN];
-    struct sockaddr_in sender;
-    socklen_t slen = sizeof(sender);
-
-    int bytes = recvfrom(fd, buf, sizeof(buf) - 1, 0, (struct sockaddr *)&sender, &slen);
-    if (bytes <= 0) return NULL;
-
-    buf[bytes] = '\0';
-    char copy[BUFFER_LEN];
-    strncpy(copy, buf, sizeof(copy) - 1);
-    copy[sizeof(copy) - 1] = '\0';
-
-    char *tokens[10];
-    int num = get_token(copy, tokens, 10);
-
-    if (num < 2) return NULL; // At least we need ANNOUNCE and the port
-
-    int ip_int = (int)sender.sin_addr.s_addr;
-    int port = atoi(tokens[1]);
-
-    received_node nodo;
-    nodo.ip = ip_int;
-    nodo.port = port;
-    nodo.cpu = get_quantity(tokens[2]);
-    nodo.mem = get_quantity(tokens[3]);
-    nodo.gpu = get_quantity(tokens[4]);
-
-    
-    nodo.time = get_monotonic_time();
-
-    //if it is new then it insert in hash_nodes, otherwise replace it 
-    tablahash_insertar(table_nodes, (void*)&nodo);
-
-    return NULL;
-}
 
 char* get_nodes_instance() {
 
@@ -203,10 +159,10 @@ char* get_nodes_instance() {
             received_node* nodo = (received_node*)actual->dato;
 
             // Separador ';' antes de cada nodo salvo el primero
-            if (!primero && (size_t)offset < buffer_size) {
+            if (!first && (size_t)offset < buffer_size) {
                 offset += snprintf(result + offset, buffer_size - offset, ";");
             }
-            primero = 0;
+            first = 0;
 
             // Convertimos la IP de int a string legible para el protocolo
             struct in_addr addr;

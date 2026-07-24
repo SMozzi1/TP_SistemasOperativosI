@@ -13,8 +13,10 @@ SRCS = main.c \
        agenteC/utils.c \
        agenteC/loopfunc.c \
        agenteC/read_instructions.c \
-       ResourceManager/job_table.c \
-       ResourceManager/rm_Queue.c
+       agenteC/timer.c \
+       ResourceManager/hash.c \
+       ResourceManager/tablahash.c \
+       ResourceManager/resource_queue.c
 
 # Convierte automáticamente la lista de .c en archivos objeto .o
 OBJS = $(SRCS:.c=.o)

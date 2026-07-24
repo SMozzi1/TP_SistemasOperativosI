@@ -4,7 +4,6 @@
 
 #include "comunicaciones.h"
 #include "utils.h"
-#include "../ResourceManager/job_table.h"
 #include "globals.h"
 #include "loopfunc.h"
 
@@ -16,24 +15,10 @@
     - socket_server: listens on 0.0.0.0 for external node connections.
     - socket_erlang: restricted to localhost (127.0.0.1) for local communication.
     - socket_UDP: configured for broadcasting node announcements.
+
+    (initialize_listen_sockets and event_loop are file-local statics defined in
+    agente.c; they are intentionally not declared here.)
  */
-static void initialize_listen_sockets(int port);
-
-
-/*
-    Main worker thread loop that waits for events from the epoll instance.
-    Each thread blocks on epoll_wait and handles events such as:
-    - New incoming connections (TCP).
-    - Broadcast timer expiration (UDP announcements).
-    - Job timeout management (local job table maintenance).
-    - Incoming datagrams from remote nodes (UDP).
-    - Inter-process communication with the Erlang scheduler (TCP).
-        Uses EPOLLONESHOT to ensure thread safety when accessing shared file descriptors
-        without requiring global per-fd mutexes.
- */
-static void* event_loop(void *arg);
-
-
 
 /**
     Sets up the epoll event monitoring system and spawns the thread pool.

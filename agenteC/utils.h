@@ -27,19 +27,24 @@ void log_error(const char *msg);
 void fatal_error(const char *msg);
 
 
-/*Functions to work with global variables */
-void update_local_resources(job_entry* job);
-void release_resources(job_entry* job);
-void original_socket(job_entry* job, int fd);
+/* Client side: send RELEASE to every provider that granted a resource to this
+ * local job and close those connections. Does NOT free the job (its owner
+ * table frees it on removal). */
+void release_resources(local_job_t* job);
 
 
+/* Server side: a remote RESERVE arrived; enqueue it and try to grant. */
 void enqueue_jobs(const char* resource, int job_id, int amount, int fd_actual);
-void reserve_elements();
+void reserve_elements(void);
+void drain_queue(request_queue* q, int* avail, const char* type);
 
 
-char* obtener_string_nodos(job_entry* job_table[]);
+/* Server side: return to the local pool everything reserved on this fd
+ * (RELEASE or unexpected disconnect) and re-drain the queues. */
 void release_client_by_fd(int fd);
-void drain_queue(p_queue_t* q, int* avail, const char* type);
+
+/* Client side: a provider disconnected before answering our RESERVE; reject
+ * the affected local job instead of waiting for the timeout. */
 void handle_outbound_disconnect(int fd);
 
 
