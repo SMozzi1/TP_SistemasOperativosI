@@ -13,9 +13,9 @@ request_queue* cpu_queue;
 request_queue* mem_queue;
 request_queue* gpu_queue;
 
-HashTable table_localjobs;
-HashTable table_ourjobs;
-HashTable table_nodejobs;
+HashTable table_localjobs;//Table for jobs from our erlang
+HashTable table_ourjobs; //Table for jobs from our erlang, but indexed by fd
+HashTable table_nodejobs; //Table for jobs from other nodes
 HashTable table_nodes;
 
 
